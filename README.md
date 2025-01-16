@@ -6,11 +6,11 @@ This repository contains the code and supplementary materials associated with ou
 **"Early Detection of Myeloid Neoplasm Using Blood Count Trajectories"**
 
 ### Abstract
-Despite the discovery of precursor states to myeloid neoplasm (MNs), their large-scale screening is not yet possible. Here, we compared longitudinal blood count data from individuals who subsequently developed *de novo* acute myeloid leukemia (AML, N=361), myelodysplastic syndrome (MDS, N=749), and primary myelofibrosis (MF, N=93) to controls without later cancer diagnosis (N=75,714). 
+Despite the discovery of precursor states to myeloid neoplasm (MNs), their large-scale screening is not yet possible. Here, we compared longitudinal blood count data from individuals who subsequently developed *de novo* acute myeloid leukemia (AML, N=361), myelodysplastic syndrome (MDS, N=749), and primary myelofibrosis (MF, N=93) to controls without later cancer diagnosis (N=75 714).
 
-By characterizing patient age, gender, and pre-diagnostic blood count trajectories, we collected over 67M data points (2002–2024) and developed machine learning models to predict the onset of MNs up to five years before clinical diagnosis. These models achieved high predictive accuracy without genomic profiling, contrasting with existing pre-MN risk scores. 
+By characterizing patient age, gender and pre-diagnostic blood count trajectories, we collected over 67M data points between 2002-2024 and developed machine learning models that accurately predicted the onset of MNs up to five years before clinical diagnosis. Notably, these models achieved high predictive accuracy without genomic profiling in contrast to other available pre-MN risk scores. We validated the models in both a hold-out and an independent test set(N=183 AML, N=468 MDS, N=49 MF, N=10 058 controls).
 
-We validated the models in both a hold-out and an independent test set (N=183 AML, N=468 MDS, N=49 MF, N=10,058 controls). Exploring the connection between pre-MN blood counts and diagnostic genomic/chromosomal alterations, we revealed links such as elevated erythroid RDW, bone marrow erythroid dysplasia, *TP53*mut, *SRSF2*mut, and *NPM1*wt. These findings demonstrate the feasibility of earlier, accessible detection of pre-MN—a prerequisite to studying and applying personalized surveillance and early therapy.
+By exploring the connection between pre-MN blood counts and diagnostic genomic and chromosomal alterations, we revealed the connection between elevated erythroid RDW, bone marrow erythroid dysplasia, *TP53*mut, *SRSF2*mut and *NPM1*wt as well as poor prognosis. These findings demonstrate the feasibility of earlier and accessible detection of pre-MN, which is a prerequisite to study and apply personalized surveillance plans and early therapy.
 
 ## Repository Contents
 This repository includes:
