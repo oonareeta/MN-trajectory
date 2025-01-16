@@ -1,7 +1,7 @@
 # MN-Trajectory
 
 ## Overview
-This repository contains the code, data, and supplementary materials associated with our publication: 
+This repository contains the code and supplementary materials associated with our publication: 
 
 **"Early Detection of Myeloid Neoplasms Using Blood Count Trajectories and Machine Learning"**
 
