@@ -3,7 +3,7 @@
 ## Overview
 This repository contains the code and supplementary materials associated with our publication: 
 
-**"Early Detection of Myeloid Neoplasms Using Blood Count Trajectories and Machine Learning"**
+**"Early Detection of Myeloid Neoplasm Using Blood Count Trajectories"**
 
 ### Abstract
 Despite the discovery of precursor states to myeloid neoplasm (MNs), their large-scale screening is not yet possible. Here, we compared longitudinal blood count data from individuals who subsequently developed *de novo* acute myeloid leukemia (AML, N=361), myelodysplastic syndrome (MDS, N=749), and primary myelofibrosis (MF, N=93) to controls without later cancer diagnosis (N=75,714). 
