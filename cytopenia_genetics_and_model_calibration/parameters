@@ -1,0 +1,6 @@
+# Parameters
+import = "mounts/research/husdatalake/disease/data/Preleukemia"
+export = "mounts/research/husdatalake/disease/processed_data/Preleukemia"
+results = "mounts/research/husdatalake/disease/results/Preleukemia"
+scripts = "mounts/research/husdatalake/disease/scripts/Preleukemia"
+root = "mounts/research/husdatalake/disease"

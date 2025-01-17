@@ -35,4 +35,4 @@ We developed an application for easy use of our models. The app calculates the r
 ## How to Use the Repository
 ### Requirements
 - Python 3.8 or higher
-- R (for data preparation, statistical analyses and some plots)
+- R 4.4.2 and R libraries are described at `./sessioninfo.txt` (for data preparation, statistical analyses and some plots)
