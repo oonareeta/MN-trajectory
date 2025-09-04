@@ -1,18 +1,12 @@
 # CCUS
 
-# Author: Oscar Brück
-
 # Libraries
-source("./library.R")
+source("mounts/research/src/Rfunctions/library.R")
 library(MatchIt)
 library(survRM2)
 
 # General parameters
-source("./parameters")
-
-
-################ Load data #################################################################
-
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 # Labtests
 i = "MDS"
@@ -39,21 +33,22 @@ mf = mf %>%
 
 
 # Load disease data
-df_healthy = fread(paste0(export, "/lab_data_for_modelling_MDS.csv")) %>%
-  # Keep only the 11680 healthy controls
-  dplyr::filter(henkilotunnus %in% unique(mf$henkilotunnus)) %>%
-  # Remove cytopenic controls
-  dplyr::filter(tutkimus_lyhenne_yksikko %in% labtests) %>%
-  dplyr::mutate(min1 = ifelse((tutkimus_lyhenne_yksikko == "B-Hb (g/l)" & sukupuoli_selite == "Nainen" & tulos < 120) |
-                                (tutkimus_lyhenne_yksikko == "B-Hb (g/l)" & sukupuoli_selite == "Mies" & tulos < 130) |
-                                (tutkimus_lyhenne_yksikko == "B-PLT (E9/l)" & tulos < 150) |
-                                (tutkimus_lyhenne_yksikko == "B-Neut (E9/l)" & tulos < 1.8), 1, 0),
-                time_to_dg_mo = ceiling(time_to_dg/365.24)) %>%
-  dplyr::arrange(desc(min1)) %>%
-  dplyr::mutate(time_to_dg_mo1 = round(time_to_dg/30.4)) %>%
-  group_by(henkilotunnus, tutkimus_lyhenne_yksikko, time_to_dg_mo1) %>%
-  slice(1) %>%
-  ungroup()
+df_healthy = data.frame()
+for (i in 1:10) {
+  df_healthy1 = fread(paste0(export, "/healthy/lab_data_for_modelling_", i, ".csv")) %>%
+    dplyr::filter(tutkimus_lyhenne_yksikko %in% labtests) %>%
+    dplyr::mutate(min1 = ifelse((tutkimus_lyhenne_yksikko == "B-Hb (g/l)" & sukupuoli_selite == "Nainen" & tulos < 120) |
+                                  (tutkimus_lyhenne_yksikko == "B-Hb (g/l)" & sukupuoli_selite == "Mies" & tulos < 130) |
+                                  (tutkimus_lyhenne_yksikko == "B-PLT (E9/l)" & tulos < 150) |
+                                  (tutkimus_lyhenne_yksikko == "B-Neut (E9/l)" & tulos < 1.8), 1, 0),
+                  time_to_dg_mo = ceiling(time_to_dg/365.24)) %>%
+    dplyr::arrange(desc(min1)) %>%
+    dplyr::mutate(time_to_dg_mo1 = round(time_to_dg/30.4)) %>%
+    group_by(henkilotunnus, tutkimus_lyhenne_yksikko, time_to_dg_mo1) %>%
+    slice(1) %>%
+    ungroup()
+  df_healthy = rbind(df_healthy, df_healthy1)
+}
 
 df_3 = df_healthy %>%
   group_by(henkilotunnus, tutkimus_lyhenne_yksikko, time_to_dg_mo) %>%
@@ -97,7 +92,7 @@ for (i in c("de novo AML", "MDS", "MF")) {
   # Load disease data
   df = readRDS(paste0(export, "/", i, "_lab_demo.rds")) %>%
     dplyr::filter(tutkimus_lyhenne_yksikko %in% labtests) %>%
-    dplyr::filter(time_to_dg >= (-5 * 365.25) & time_to_dg <= (-30)) %>%
+    dplyr::filter(time_to_dg >= (-5 * 365.25) & time_to_dg < (-90)) %>%
     dplyr::mutate(time_to_dg_mo1 = round(time_to_dg/30.4)) %>%
     dplyr::mutate(min1 = ifelse(((tutkimus_lyhenne_yksikko == "B-Hb (g/l)" & sukupuoli_selite == "Nainen" & tulos < 120) |
                                    (tutkimus_lyhenne_yksikko == "B-Hb (g/l)" & sukupuoli_selite == "Mies" & tulos < 130) |
@@ -160,7 +155,8 @@ for (i in c("de novo AML", "MDS", "MF")) {
 
 # Combine with similar tables for healthy
 df3 = df2_1 %>%
-  dplyr::bind_rows(df_healthy2)
+  dplyr::bind_rows(df_healthy2) %>%
+  dplyr::filter(time_to_dg <= -90)
 
 df_healthy_sr = df3 %>%
   group_by(disease, tutkimus_lyhenne_yksikko) %>%
@@ -178,6 +174,17 @@ df_healthy_sr2 = df3 %>%
 df_healthy_sr = df_healthy_sr %>%
   dplyr::left_join(df_healthy_sr2); df_healthy_sr
 
+ta = df3 %>%
+  dplyr::filter(time_to_dg_mo == "-1") %>%
+  group_by(tutkimus_lyhenne_yksikko, time_to_dg_mo, disease) %>%
+  summarise(med1 = median(prop))
+write_xlsx(ta, paste0(results, "/CCUS_by_dg.xlsx"))
+
+df2_1 %>%
+  dplyr::filter(time_to_dg_mo == "-1") %>%
+  group_by(tutkimus_lyhenne_yksikko, disease) %>%
+  summarise(med1 = median(prop))
+
 df2_1 = df2_1 %>%
   dplyr::left_join(df_healthy_sr)
 
@@ -187,6 +194,7 @@ df2_1 = df2_1 %>%
 
 # Plot
 for (i in unique(df2_1$tutkimus_lyhenne_yksikko)) {
+  
   g = ggplot(df2_1 %>%
                dplyr::filter(tutkimus_lyhenne_yksikko == i), aes(x = time_to_dg_mo, y = prop)) +
     geom_rect(data = df2_1 %>%
@@ -200,7 +208,6 @@ for (i in unique(df2_1$tutkimus_lyhenne_yksikko)) {
     scale_x_continuous(breaks = seq(from = -5, to = -1, by = 1), labels = seq(from = -5, to = -1, by = 1)) +
     ylim(0, 100) +
     theme_bw() +
-    # scale_color_brewer(palette = "Set2") +
     scale_color_manual(values = c("#BF9F45","#348ABD", "#2B6E2A")) +
     guides(color=guide_legend(title="Disease", nrow = 1, override.aes = list(size = -1))) +
     theme(axis.line = element_line(colour = "black"),
@@ -221,7 +228,6 @@ for (i in unique(df2_1$tutkimus_lyhenne_yksikko)) {
           axis.text.y = element_text(size=12, colour = "black"),
           axis.title=element_text(size=14, colour = "black"),
           plot.title=element_text(colour="black", hjust = 0.0,
-                                  # hjust=ifelse(i %in% c("secondary AML", "MF", "de novo AML"), 0.3, 0.4),
                                   vjust=0, size=14, face="bold")); g
   ggsave(plot = g,
          filename = paste0(results, "/cytopenia_proportion_", janitor::make_clean_names(i), ".png"),

@@ -1,172 +1,22 @@
-# Process data
-
-# Author: Oscar Brück
-
 # Libraries
-source("./library.R")
+source("mounts/research/src/Rfunctions/library.R")
 library(broom)
-
-# General parameters
-source("./parameters")
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 
 ################ Load data #################################################################
 
 
-# Read data
-df = readRDS(paste0(export, "/lab_aml_mds_mf_corrected.rds"))
-a = readRDS(paste0(export, "/CBC_tests_to_include.rds"))
-
-
-# Exclude patients with wrong diagnosis
-exclude = readxl::read_xlsx(paste0("mounts/research/husdatalake/disease/general/exclude_pts.xlsx"))
-# if (i == "de novo AML") {
-#   j = "AML"
-# } else {
-#   j = i
-# }
-df = df %>%
-  dplyr::filter(!(disease == "AML" & henkilotunnus %in% exclude[exclude$disease=="AML",]$henkilotunnus))
-df = df %>%
-  dplyr::filter(!(disease == "MF" & henkilotunnus %in% exclude[exclude$disease=="MF",]$henkilotunnus))
-df = df %>%
-  dplyr::filter(!(disease == "MDS" & henkilotunnus %in% exclude[exclude$disease=="MDS",]$henkilotunnus))
-
-# Remove secondary MF
-pmf = readRDS("mounts/research/husdatalake/disease/processed_data/MF/secondary_MF.rds") %>%
-  dplyr::filter(!disease == "Primary")
-df = df %>%
-  dplyr::filter(!(disease == "MF" & henkilotunnus %in% pmf$henkilotunnus))
-
-
-
-# Time to dg
-df = df %>%
-  dplyr::mutate(
-    time_to_dg = dg_date_combined - naytteenottoaika,
-    time_to_dg = as.numeric(time_to_dg)
-  ) %>%
-  ## Filter tests without digits
-  dplyr::filter(
-    str_detect(tulos, "[[:digit:]]")
-  ) %>%
-  mutate(
-    tulos = as.numeric(tulos)
-  ) %>%
-  dplyr::filter(time_to_dg < (10*365) & time_to_dg > 30)
-
-
-# De novo AML
-df_mds_mf = df %>%
-  dplyr::filter(disease %in% c("MDS", "MF"))
-df_aml_denovo = df %>%
-  dplyr::filter(disease == "AML") %>%
-  dplyr::filter(!henkilotunnus %in% df_mds_mf$henkilotunnus) %>%
-  dplyr::mutate(disease = "de novo AML")
-df_aml_sec = df %>%
-  dplyr::filter(disease == "AML") %>%
-  dplyr::filter(henkilotunnus %in% df_mds_mf$henkilotunnus) %>%
-  dplyr::mutate(disease = "secondary AML")
-df = df %>%
-  bind_rows(df_aml_denovo) %>%
-  bind_rows(df_aml_sec)
-
-
-# Remove tests ordered rarely
-## Summarise
-df_n_aml1 = df %>%
-  dplyr::filter(disease=="AML") %>%
-  distinct(henkilotunnus, tutkimus_lyhenne) %>%
-  group_by(tutkimus_lyhenne) %>%
-  summarise(n = n()) %>%
-  dplyr::filter(n > 100)
-df_n_aml2 = df %>%
-  dplyr::filter(disease=="AML") %>%
-  group_by(tutkimus_lyhenne) %>%
-  summarise(n = n()) %>%
-  dplyr::filter(n > 300)
-df_n_mds1 = df %>%
-  dplyr::filter(disease=="MDS") %>%
-  distinct(henkilotunnus, tutkimus_lyhenne) %>%
-  group_by(tutkimus_lyhenne) %>%
-  summarise(n = n()) %>%
-  dplyr::filter(n > 100)
-df_n_mds2 = df %>%
-  dplyr::filter(disease=="MDS") %>%
-  group_by(tutkimus_lyhenne) %>%
-  summarise(n = n()) %>%
-  dplyr::filter(n > 300)
-df_n_mf1 = df %>%
-  dplyr::filter(disease=="MF") %>%
-  distinct(henkilotunnus, tutkimus_lyhenne) %>%
-  group_by(tutkimus_lyhenne) %>%
-  summarise(n = n()) %>%
-  dplyr::filter(n > 50)
-df_n_mf2 = df %>%
-  dplyr::filter(disease=="MF") %>%
-  group_by(tutkimus_lyhenne) %>%
-  summarise(n = n()) %>%
-  dplyr::filter(n > 150)
-df_lab_tests = rbind(df_n_aml1, df_n_aml2, df_n_mds1, df_n_mds2, df_n_mf1, df_n_mf2) %>%
-  distinct(tutkimus_lyhenne)
-df_negative = df %>%
-  dplyr::filter(tulos<0) %>%
-  distinct(tutkimus_lyhenne)
-saveRDS(df_lab_tests, paste0(export, "/df_lab_tests.rds"))
-saveRDS(df_negative, paste0(export, "/df_negative.rds"))
-
-
 # Loop over distinct diseases
-for (i in unique(df$disease)) {
+
+for (i in c("MF", "MDS", "de novo AML")) {
+  
   print(i)
-  df1 = df %>%
-    dplyr::filter(tutkimus_lyhenne %in% a$Var1 |
-                    (tutkimus_lyhenne %in% df_lab_tests$tutkimus_lyhenne)) %>%
-    dplyr::filter(disease == i) %>%
-    dplyr::filter(!tutkimus_lyhenne %in% df_negative$tutkimus_lyhenne) %>%
-    dplyr::filter(!is.na(tulos)) %>%
-    dplyr::mutate(tulos = as.numeric(tulos),
-                  tulos = tulos + 0.01,
-                  time_to_dg_mo = ceiling(time_to_dg/365.24),
-                  time_to_dg = -time_to_dg,
-                  time_to_dg_mo = -time_to_dg_mo,
-                  age = round(((naytteenottoaika-as.Date(syntymaaika_pvm))/365.24), 1),
-                  tutkimus_lyhenne_yksikko = gsub("Ion\\.", "Ion", gsub(" ", "", tutkimus_lyhenne)),
-                  tutkimus_lyhenne_yksikko = ifelse(str_detect(tutkimus_lyhenne_yksikko, "^L") & yksikko == "", paste0(tutkimus_lyhenne_yksikko, " (%)"),
-                                                    ifelse(yksikko == "", tutkimus_lyhenne_yksikko, paste0(tutkimus_lyhenne_yksikko, " (", gsub("_", " ", yksikko), ")"))),
-                  tutkimus_lyhenne_yksikko = gsub("Liuskat", "Segment",
-                                                  gsub("Retik", "Retic",
-                                                       gsub("Lymf", "Ly",
-                                                            gsub("Punas", "RBC",
-                                                                 gsub("Sauvatn", "Band",
-                                                                      gsub("-Kj", " Conj",
-                                                                           gsub("Gluk", "Gluc",
-                                                                                gsub("Krea", "Crea",
-                                                                                     gsub("Lier", "Cast",
-                                                                                          gsub("AtyypLymf", " AtypLy",
-                                                                                               gsub("Laktaat", "Lactate",
-                                                                                                    gsub("Leuk", "WBC",
-                                                                                                         gsub("Trom", "PLT", tutkimus_lyhenne_yksikko)))))))))))))) %>%
-    dplyr::filter(!tutkimus_lyhenne_yksikko  %in% c("P-PSA (ug/l)", "P-PSA-V (ug/l)", "P-TnI (ug/l)", "P-TnT (ug/l)", "S-ANA", "S-B12-Vit (pmol/l)"))
   
-  # Define the bin breaks (including rightmost bin for ages 100 and above)
-  breaks <- c(seq(0, 100, by = 5), 200)
-  # Label the bins with descriptive text
-  bin_labels <- paste0(breaks[-length(breaks)], "-", breaks[-1])
-  bin_labels = bin_labels[-21]
-  bin_labels[length(bin_labels)+1] <- "100+"  # Add label for the last bin
-  # Create a new column named "age_group" with binned categories
-  df1$age_group <- cut(as.numeric(df1$age), breaks = breaks, right = FALSE, labels = bin_labels)
-  
-  ## Save data
-  saveRDS(df1, paste0(export, "/", i, "_lab_demo.rds"))
-  
+  df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
   
   # Fit linear regression models for each variable
   tutkimus_lyhenne_yksikko_list = df1 %>%
-    dplyr::filter(!str_detect(tutkimus_lyhenne_yksikko, "^(Pt|S-|P-|aB-|vB-|U-|-I-|fS|fP|fE|B-HbA1c|B-GHb|B-Reti)")) %>%
-    dplyr::filter(!tutkimus_lyhenne_yksikko  %in% c("P-PSA (ug/l)", "P-PSA-V (ug/l)", "P-TnI (ug/l)", "P-TnT (ug/l)",
-                                                    "S-ANA", "S-B12-Vit (pmol/l)")) %>%
     distinct(tutkimus_lyhenne_yksikko)
   
   
@@ -194,6 +44,7 @@ for (i in unique(df$disease)) {
   df1_tmp = df1 %>%
     dplyr::filter(tutkimus_lyhenne_yksikko %in% tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko) %>%
     dplyr::filter(time_to_dg >= (-5*365.24))
+  
   vb = as.data.frame(table(df1_tmp$tutkimus_lyhenne_yksikko, df1_tmp$time_to_dg_mo)) %>%
     dplyr::mutate(Var2 = as.numeric(as.character(Var2)),
                   Freq = as.numeric(as.character(Freq))) %>%
@@ -209,11 +60,10 @@ for (i in unique(df$disease)) {
   
   # Extract coefficients and p-values
   coefficients <- lapply(models, coef)
-  # p_values <- lapply(models, function(model) summary(model)$coefficients[, 4])
   p_values <- lapply(models, function(model) summary(model)$coefficients[, 4])
   # Combine coefficients and p-values into a dataframe
   results1 <- data.frame(
-    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko,
+    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko[tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko %in% df1[df1$time_to_dg >= (-5*365.24),]$tutkimus_lyhenne_yksikko],
     Coefficient = sapply(coefficients, "[[", 2),
     P_Value = sapply(p_values, "[[", 2)
   ) %>%
@@ -247,7 +97,7 @@ for (i in unique(df$disease)) {
   
   # Combine coefficients and p-values into a dataframe
   results1_4y <- data.frame(
-    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko,
+    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko[tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko %in% df1[df1$time_to_dg >= (-4*365.24),]$tutkimus_lyhenne_yksikko],
     Coefficient = sapply(coefficients, "[[", 2),
     P_Value = sapply(p_values, "[[", 2)
   ) %>%
@@ -279,7 +129,7 @@ for (i in unique(df$disease)) {
   
   # Combine coefficients and p-values into a dataframe
   results1_3y <- data.frame(
-    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko,
+    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko[tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko %in% df1[df1$time_to_dg >= (-3*365.24),]$tutkimus_lyhenne_yksikko],
     Coefficient = sapply(coefficients, "[[", 2),
     P_Value = sapply(p_values, "[[", 2)
   ) %>%
@@ -311,7 +161,7 @@ for (i in unique(df$disease)) {
   
   # Combine coefficients and p-values into a dataframe
   results1_2y <- data.frame(
-    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko,
+    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko[tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko %in% df1[df1$time_to_dg >= (-2*365.24),]$tutkimus_lyhenne_yksikko],
     Coefficient = sapply(coefficients, "[[", 2),
     P_Value = sapply(p_values, "[[", 2)
   ) %>%
@@ -343,7 +193,7 @@ for (i in unique(df$disease)) {
   
   # Combine coefficients and p-values into a dataframe
   results1_1y <- data.frame(
-    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko,
+    Variable = tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko[tutkimus_lyhenne_yksikko_list$tutkimus_lyhenne_yksikko %in% df1[df1$time_to_dg >= (-1*365.24),]$tutkimus_lyhenne_yksikko],
     Coefficient = sapply(coefficients, "[[", 2),
     P_Value = sapply(p_values, "[[", 2)
   ) %>%
@@ -356,25 +206,26 @@ for (i in unique(df$disease)) {
 
 ##### PLOT #####
 
+# col1 = healthy color = #777777
+#   AML color = #BF9F45
+#   MDS color = #348ABD
+#   MF color = #2B6E2A
+#   Any MN color = #2D0E3D
 
 for (i in c("MDS", "de novo AML", "MF")) {
   
   print(i)
   
-  df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
+  df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds")) %>%
+    dplyr::filter(time_to_dg_mo < 0)
   
   # Read data on healthy
   healthy = readRDS(paste0(import, "/lab_healthy_median.rds")) %>%
     dplyr::select(-n) %>%
     dplyr::rename(tulos_healthy = tulos)
   df1 = df1 %>%
-    dplyr::left_join(healthy)
-  df1 = df1 %>%
+    dplyr::left_join(healthy) %>%
     dplyr::mutate(tulos_norm = tulos - tulos_healthy)
-  
-  # La to ESR
-  df1 = df1 %>%
-    dplyr::mutate(tutkimus_lyhenne_yksikko = ifelse(tutkimus_lyhenne_yksikko=="B-La (mm/h)", "B-ESR (mm/h)", tutkimus_lyhenne_yksikko))
   
   # Distinct tests
   tutkimus_lyhenne_yksikko_list = df1 %>%
@@ -425,7 +276,6 @@ for (i in c("MDS", "de novo AML", "MF")) {
            filename = paste0(results, "/", i, "/lab_boxplots/", janitor::make_clean_names(j), ".png"),
            height = 4, width = 4, units = "in", dpi = 300)
   }
-  
   # Plot each regression with normalized values
   print("norm")
   

@@ -1,17 +1,12 @@
-# Compare laboratory values 0-2 years prior to disease to controls
-
-# Author: Oscar Brück
+# Link cytogenetics and genomics data to prediction accuracy
+## The idea is to estimate how much any given mutation affects pre-leukemia lab values
 
 # Libraries
-source("./library.R")
+source("mounts/research/src/Rfunctions/library.R")
 
 
 # General parameters
-source("./parameters")
-
-
-############################################################
-
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 # Loop over diseases
 pvalue_df_labs <- data.frame()
@@ -19,10 +14,21 @@ diseases = c("MDS", "MF", "de novo AML")
 for (i in diseases) {
   
   # Collect data for disease
-  df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
-  df = fread(paste0(export, "/lab_data_for_modelling_", i, ".csv")) %>%
-    dplyr::mutate(disease = ifelse(henkilotunnus %in% df1$henkilotunnus, i, "Healthy")) %>%
-    dplyr::filter((disease == "Healthy" & time_to_dg<=(-1*365)) | (time_to_dg>=(-2*365) & time_to_dg<(-30)))
+  df = fread(paste0(export, "/lagged_data_", i, "3.csv"), nrows = 5) %>%
+    dplyr::select(-c(contains("_val_"), contains("ferrit"), contains("_trend_"), contains("l_blast"),
+                     contains("l_myelos"), contains("l_meta"), contains("crea"), contains("pt_gf"), contains("p_tt"),
+                     contains("rows"), contains("event_1y"), contains("retic")))
+  tmp = names(df)
+  df = fread(paste0(export, "/lagged_data_", i, "3.csv"), select = tmp)
+  df = df %>%
+    dplyr::mutate(disease = ifelse(disease == 1, i, "Healthy")) %>%
+    mutate(time_to_dg = -time_to_dg) %>%
+    dplyr::filter((disease == "Healthy" & time_to_dg<=(-1*365)) | (time_to_dg>=(-2*365) & time_to_dg<(-90)))
+  
+  
+  # Melt
+  df = df %>%
+    reshape2::melt(id.vars = c("henkilotunnus", "time_to_dg", "disease", "sukupuoli_selite", "age"), variable.name = "tutkimus_lyhenne_yksikko", value.name = "tulos_norm")
   
   # Summarise median by patient and laboratory test
   df = df %>%
@@ -49,6 +55,9 @@ for (i in diseases) {
   pvalue_df1$median0 = unlist(lapply(unique(df$tutkimus_lyhenne_yksikko), function(x) median(df[df$tutkimus_lyhenne_yksikko == x,]$tulos_norm, na.rm=TRUE)))
   pvalue_df1$median2 = unlist(lapply(unique(df$tutkimus_lyhenne_yksikko), function(x) median(df[df$disease == i & df$tutkimus_lyhenne_yksikko == x,]$tulos_norm, na.rm=TRUE)))
   pvalue_df1$median1 = unlist(lapply(unique(df$tutkimus_lyhenne_yksikko), function(x) median(df[df$disease == "Healthy" & df$tutkimus_lyhenne_yksikko == x,]$tulos_norm, na.rm=TRUE)))
+  pvalue_df1$mean0 = unlist(lapply(unique(df$tutkimus_lyhenne_yksikko), function(x) mean(df[df$tutkimus_lyhenne_yksikko == x,]$tulos_norm, na.rm=TRUE)))
+  pvalue_df1$mean2 = unlist(lapply(unique(df$tutkimus_lyhenne_yksikko), function(x) mean(df[df$disease == i & df$tutkimus_lyhenne_yksikko == x,]$tulos_norm, na.rm=TRUE)))
+  pvalue_df1$mean1 = unlist(lapply(unique(df$tutkimus_lyhenne_yksikko), function(x) mean(df[df$disease == "Healthy" & df$tutkimus_lyhenne_yksikko == x,]$tulos_norm, na.rm=TRUE)))
   
   pvalue_df1 = pvalue_df1 %>%
     ### Rownames to column
@@ -72,7 +81,11 @@ pvalue_df_labs = readRDS(paste0(export, "/wilcoxon_labs.rds"))
 
 # Prepare data for balloonplot
 ## Calculate FC and -log10 P value
+names1 = readxl::read_xlsx(paste0(export, "/lab_test_names.xlsx"))
 pvalue_df_labs1 <- pvalue_df_labs %>%
+  dplyr::left_join(names1) %>%
+  dplyr::select(-Lab) %>%
+  dplyr::rename(Lab = Lab1) %>%
   dplyr::filter(!str_detect(Lab, "RDW-SD|L-Blast")) %>%
   mutate(Disease = ifelse(Disease == "MF", "Primary MF", Disease),
          Disease = paste0(toupper(substr(Disease, 1, 1)), substr(Disease, 2, nchar(Disease))),
@@ -95,11 +108,11 @@ pvalue_df_labs1 <- pvalue_df_labs %>%
                          ifelse(FC<0, log10(-FC), log10(FC))),
          neg_log10_p_adj = ifelse(is.na(FC_log), 0, neg_log10_p_adj))
 
-
 # Plot
 p <- ggballoonplot(pvalue_df_labs1, x = "Lab", y = "Disease",
                    fill = "FC_log",
                    size = "neg_log10_p_adj",
+                   # size.range = c(1, 10),
                    ggtheme = theme_bw()) +
   scale_size(
     breaks = c(-log10(0.05), 2, 3),

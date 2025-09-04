@@ -1,24 +1,17 @@
 # Link cytogenetics and genomics data to prediction accuracy
 ## The idea is to estimate how much any given mutation affects pre-leukemia lab values
 
-# Author: Oscar Brück
-
 # Libraries
-source("./library.R")
+source("mounts/research/src/Rfunctions/library.R")
 
-
-# General parameters
-source("./parameters")
-
-# Clustering function
 myhclust <- function(x){
   cor <- cor(as.matrix(x), method="spearman", use="pairwise.complete.obs")
   cor2 <- as.dist(1-cor)
   hclust(d=cor2, method="ward.D2")
 }
 
-
-############################################################
+# General parameters
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 
 # Loop over diseases
@@ -31,17 +24,13 @@ for (i in diseases) {
   # Read lab data
   df = fread(paste0(export, "/lab_data_for_modelling_", i, ".csv")) %>%
     dplyr::filter(henkilotunnus %in% unique(df1$henkilotunnus)) %>%
-    dplyr::filter(time_to_dg<-30 & time_to_dg>-730)
-  
-  # La to ESR
-  df = df %>%
-    dplyr::mutate(tutkimus_lyhenne_yksikko = ifelse(tutkimus_lyhenne_yksikko=="B-La (mm/h)", "B-ESR (mm/h)", tutkimus_lyhenne_yksikko))
+    dplyr::filter(time_to_dg<-90 & time_to_dg>=-730)
   
   # Summarise median by patient and laboratory test
   df = df %>%
     dplyr::group_by(henkilotunnus, tutkimus_lyhenne_yksikko) %>%
     mutate(tulos_norm = mean(tulos_norm, na.rm=TRUE)) %>%
-    slice(1) %>%
+    dplyr::slice(1) %>%
     ungroup()
   
   
@@ -90,11 +79,8 @@ for (i in diseases) {
   }
   
   # Count NAs in the sample data frame
-  if (i == "MF") {
-    n1 = 4
-  } else {
-    n1 = 10
-  }
+  n1 = pmin(15, 0.05*nrow(muts))
+  
   
   ## Chromosomes
   chrm_pos_counts = count_pos_per_column(chrms)
@@ -277,6 +263,7 @@ for (i in diseases) {
   pvalue_df_chrms = rbind(pvalue_df_chrms, pvalue_df_muts)
   
   
+  # CHROMOSOMES
   # Prepare data for balloonplot
   ## Calculate FC and -log10 P value
   pvalue_df_chrm3 <- pvalue_df_chrms %>%
@@ -300,6 +287,7 @@ for (i in diseases) {
   
   
   # Hclusters
+  ## CHROMOSOMES
   # Calculate the distance matrix using Euclidean distance
   pvalue_df_chrm1 = dcast(pvalue_df_chrm3 %>%
                             dplyr::mutate(
@@ -365,7 +353,8 @@ for (i in diseases) {
           panel.background = element_rect(fill='transparent', color = NA),
           rect = element_rect(fill = "transparent"),
           legend.position = "bottom", legend.box="horizontal", legend.margin=margin()); p
-  ggsave(plot = p, bg = "transparent", filename = paste0(results, "/", i, "/Balloonplot_chromosomes.png"), width = 8, height = (floor(length(unique(pvalue_df_chrm3$gene))/5)+3.5), units = "in", dpi = 300)
-}
+  ggsave(plot = p, bg = "white", filename = paste0(results, "/", i, "/Balloonplot_chromosomes.png"), width = 8, height = (floor(length(unique(pvalue_df_chrm3$gene))/5)+3.5), units = "in", dpi = 300)
 
+  
+}
 

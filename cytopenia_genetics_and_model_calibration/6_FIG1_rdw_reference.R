@@ -1,25 +1,21 @@
-# RDW reference
-
-# Author: Oscar Brück
+# Heatmap
 
 # Libraries
-source("./library.R")
+source("mounts/research/src/Rfunctions/library.R")
 library(broom)
 library(ggarchery)
 
+
 # General parameters
-source("./parameters")
-
-
-############################################################
-
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 # Loop
 for (i in c("MDS", "MF", "de novo AML")) {
   
-  df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
+  print(i)
   
-  # Keep RDW
+  df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
+  # Remove f_p_kol_hdl, f_p_trfesat and f_p_fe_umol
   df1 = df1 %>%
     dplyr::filter(tutkimus_lyhenne_yksikko == "E-RDW (%)")
   
@@ -36,7 +32,8 @@ for (i in c("MDS", "MF", "de novo AML")) {
     group_by(time_to_dg_mo) %>%
     dplyr::summarise(
       tulos_low = 100*sum(tulos_cat, na.rm = TRUE) / n()
-    )
+    ) %>%
+    ungroup()
   df2_high = df1 %>%
     arrange(desc(tulos_cat)) %>%
     group_by(henkilotunnus, time_to_dg_mo) %>%
@@ -45,12 +42,19 @@ for (i in c("MDS", "MF", "de novo AML")) {
     group_by(time_to_dg_mo) %>%
     dplyr::summarise(
       tulos_high = 100*sum(tulos_cat, na.rm = TRUE) / n()
-    )
+    ) %>%
+    ungroup()
   ## Combine
   df2 = full_join(df2_low, df2_high)
   ## Median
   df2$tulos = (df2$tulos_low+df2$tulos_high)/2
-  
+
+  print(paste0("The median of RDW is ",
+               df2 %>%
+                 filter(time_to_dg_mo > -5.1) %>%
+                 group_by(time_to_dg_mo) %>%
+                 summarise(median = round(median(tulos, na.rm=TRUE), 2))))
+
   # Colors
   if (i == "MDS") {
     cols1 = "#348ABD"
@@ -62,7 +66,7 @@ for (i in c("MDS", "MF", "de novo AML")) {
   
   # Plot each regression with original values
   print("original")
-  g = ggplot(df2[df2$time_to_dg_mo > -5.1,], aes(x = time_to_dg_mo, y = tulos)) +
+  g = ggplot(df2[df2$time_to_dg_mo > -5.1 & df2$time_to_dg_mo < 0,], aes(x = time_to_dg_mo, y = tulos)) +
     geom_ribbon(aes(ymin = tulos_low, ymax = tulos_high), fill = cols1, alpha = 0.3) +
     geom_line() +
     geom_point() +

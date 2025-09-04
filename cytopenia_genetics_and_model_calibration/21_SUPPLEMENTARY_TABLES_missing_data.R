@@ -1,18 +1,10 @@
 # Calculate missing data
 
-# Author: Oscar Brück
-
 # Libraries
-source("./library.R")
-library(cowplot)
-
+source("mounts/research/src/Rfunctions/library.R")
 
 # General parameters
-source("./parameters")
-
-
-############################################################
-
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 tt1 = data.frame()
 
@@ -26,7 +18,6 @@ for (i in c("MF", "MDS", "de novo AML")) {
   lagged_data1 <- lagged_data1 %>%
     dplyr::filter(disease == 0 | time_to_dg < 1824)
   
-  
   ### Replace NaN with NA
   lagged_data1 <- lagged_data1 %>%
     dplyr::select(henkilotunnus, time_to_dg, disease, event_1y, sukupuoli_selite, age, everything())
@@ -35,6 +26,7 @@ for (i in c("MF", "MDS", "de novo AML")) {
   
   # Variables
   vars = names(lagged_data1)[grep(pattern = "tulos_norm", x = names(lagged_data1))]
+  vars = vars[grep(pattern = "l_blast|atyp|rdw_sd|ind|p_kol|trfesat|p_fe", x = vars, invert = TRUE)]
   
   # Cound missing rows
   tt = as.data.frame(sapply(vars, function(x) 100-(round(100/nrow(lagged_data1)*nrow(lagged_data1[!is.na(lagged_data1[[x]]),]),1))))

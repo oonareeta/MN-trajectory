@@ -1,26 +1,21 @@
 # Link cytogenetics and genomics data to prediction accuracy
 ## The idea is to estimate how much any given mutation affects pre-leukemia lab values
-# Author: Oscar Brück
 
 # Libraries
-source("./library.R")
+source("mounts/research/src/Rfunctions/library.R")
 
 
 # General parameters
-source("./parameters")
-
-
-############################################################
-
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 # Loop over diseases
 pvalue_df_labs <- data.frame()
-diseases = c("any_MN", "MDS", "primary_MF", "de_novo_AML")
+diseases = c("any_MN", "MDS", "MF", "de_novo_AML")
 df = data.frame()
 for (i in diseases) {
   
   # Collect data for disease
-  df1 = fread(paste0(scripts, "/oona2/explainability/", i, "_TP_FN_comparison_labs.csv")) %>%
+  df1 = fread(paste0(scripts, "/oona_new/explainability/comparison_dataframes/youden/", i, "_TP_FN_comparison_labs.csv")) %>%
     as.data.frame() %>%
     dplyr::rename("Variable" = "V1",
                   "N_TP" = "N TP",
@@ -30,11 +25,14 @@ for (i in diseases) {
     dplyr::mutate(Variable = ifelse(Variable=="B-La (mm/h)", "B-ESR (mm/h)", Variable),
                   p_adjusted = p.adjust(pvalue, "BH"),
                   Disease = gsub("_", " ", i))
-  
+
   # Rbind
   df = rbind(df, df1)
-  
+
 }
+
+# Export
+fwrite(df, paste0(export, "/TP_FN_comparison_labs_combined.csv"))
 
 
 ############## PLOTS ##############
@@ -43,14 +41,14 @@ for (i in diseases) {
 # Prepare data for balloonplot
 ## Calculate FC and -log10 P value
 pvalue_df_labs1 <- df %>%
-  dplyr::filter(!str_detect(Variable, "E-Retic|RDW-SD")) %>%
-  mutate(Variable = ifelse(Variable == "Age", "Age (years)", Variable),
-         Variable = ifelse(Variable == "Sex", "Sex (men)", Variable),
+  dplyr::filter(!str_detect(Variable, "E-Retic|RDW-SD|rows_in_last_month")) %>%
+  mutate(Variable = ifelse(Variable == "Age", "age", Variable),
+         Variable = ifelse(Variable == "Sex", "sukupuoli_selite", Variable),
          FC = ifelse(TP_median == 0 & FN_median == 0, 1,
                      ifelse(FN_median == 0, TP_median+1,
-                            ifelse(TP_median == 0, 1/FN_median, 
+                            ifelse(TP_median == 0, 1/(FN_median+1), 
                                    ifelse(FN_median == 0.01, TP_median+1,
-                                          ifelse(TP_median == 0.01, 1/FN_median, TP_median / FN_median)))))) %>%
+                                          ifelse(TP_median == 0.01, 1/(FN_median+1), TP_median / FN_median)))))) %>%
   mutate(
     Disease = paste0(toupper(substr(Disease, 1, 1)), substr(Disease, 2, nchar(Disease))),
     p_adjusted = ifelse(p_adjusted == 0, min(p_adjusted[p_adjusted>0], na.rm = TRUE), p_adjusted),
@@ -64,15 +62,25 @@ pvalue_df_labs1 <- df %>%
                         ifelse(pvalue<0.01, 0.01,
                                ifelse(pvalue<0.05, 0.05,
                                       ifelse(pvalue<0.1, 0.1, "ns")))),
+    # FC_log = log(FC) )
     FC_log = ifelse(FC == 0, NA,
                     ifelse(FC<0, log(-FC), log(FC))),
     neg_log10_p_adj = ifelse(is.na(FC_log), 0, neg_log10_p_adj),
     neg_log10_p_adj1 = ifelse(neg_log10_p_adj > 10, 10, neg_log10_p_adj))
 
+# Correct names
+names1 = fread("mounts/research/husdatalake/disease/processed_data/Preleukemia/variable_names.csv") %>%
+  dplyr::rename(Variable = variable)
+pvalue_df_labs1 = pvalue_df_labs1 %>%
+  dplyr::left_join(names1) %>%
+  dplyr::rename(Variable1 = Variable,
+                Variable = output)
 
+# Plot
 p <- ggballoonplot(pvalue_df_labs1, x = "Variable", y = "Disease",
                    fill = "FC_log",
                    size = "neg_log10_p_adj1",
+                   # size.range = c(1, 10),
                    ggtheme = theme_bw()) +
   scale_size(breaks = c(0, -log10(0.05), 2, 3),
              range = c(1, 7),

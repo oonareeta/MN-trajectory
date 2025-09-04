@@ -1,19 +1,13 @@
 # Heatmap
 
-# Author: Oscar Brück
-
 # Libraries
-source("./library.R")
+source("mounts/research/src/Rfunctions/library.R")
 library(broom)
 library(ggarchery)
 
 
 # General parameters
-source("./parameters")
-
-
-############################################################
-
+source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
 
 # Data
 ## Read normalized healthy data
@@ -22,7 +16,7 @@ healthy = readRDS(paste0(import, "/lab_healthy_median.rds")) %>%
   dplyr::rename(tulos_healthy = tulos)
 
 # Loop
-for (i in c("AML", "MDS", "MF", "de novo AML", "secondary AML")) {
+for (i in c("MDS", "MF", "de novo AML")) {
   
   df = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
   
@@ -67,11 +61,13 @@ for (i in c("AML", "MDS", "MF", "de novo AML", "secondary AML")) {
     dplyr::group_by(Variable) %>%
     dplyr::slice(1) %>%
     dplyr::ungroup() %>%
-    distinct(Variable, .keep_all = TRUE) %>%
-    dplyr::filter(!str_detect(Variable, "(E-Retic|E-RDW-SD|L-Myelos|L-Band|L-RBC|L-Metam|L-Segment|L-Erytrobl|AtypLy|L-Blast)"))
+    distinct(Variable, .keep_all = TRUE)
+
   
+  # Select variables
   labtests6 = labtests %>%
     dplyr::select(tutkimus_lyhenne_yksikko = Variable, time_to_dg_mo = timetodg, padj1_mo=padj)
+  
   
   # Process data
   df2 = df1 %>%
@@ -92,7 +88,6 @@ for (i in c("AML", "MDS", "MF", "de novo AML", "secondary AML")) {
     dplyr::mutate(padj1 = ifelse(padj>=0.05, 0,
                                  ifelse(Coefficient<0, -1/padj, 1/padj)),
                   tutkimus_lyhenne_yksikko = gsub("^(L|B|fP)-", "", tutkimus_lyhenne_yksikko),
-                  tutkimus_lyhenne_yksikko = ifelse(tutkimus_lyhenne_yksikko=="La (mm/h)", "ESR (mm/h)", tutkimus_lyhenne_yksikko),
                   size1 = ifelse(is.na(padj1_mo) | padj1_mo >= 0.05, 0, 1),
                   size = ifelse(is.na(padj1_mo) | padj1_mo >= 0.05, 0,
                                 ifelse(padj1_mo<0.001, 3,
@@ -174,9 +169,7 @@ for (i in c("AML", "MDS", "MF", "de novo AML", "secondary AML")) {
           plot.title.position = "panel",
           axis.text.x=element_text(size=10, colour="black"),
           axis.text.y=element_text(colour="black"),
-          #axis.title.x =element_text(colour="black", hjust=1),
           axis.ticks=element_line(size=0.5),
-          # plot.background=element_blank(),
           plot.margin=margin(0.7, 0.4, 0.1, 0.2, "cm"),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
