@@ -23,9 +23,6 @@ This repository includes:
 2. **Machine Learning Models**:
    - Code to train, validate, and test predictive models.
 
-3. **Results**:
-   - Performance metrics of the models (e.g., accuracy, sensitivity, and specificity).
-   - Scripts to visualize predictions.
 
 # Application
 We developed an application for easy use of our models. The app calculates the risk of developing acute myeloid leukemia (AML), myelodysplastic syndrome (MDS), and primary myelofibrosis (MF) based on laboratory data trajectories, age, and sex.
