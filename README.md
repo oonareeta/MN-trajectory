@@ -6,11 +6,7 @@ This repository contains the code and supplementary materials associated with ou
 **"Early Detection of Myeloid Neoplasm Using Blood Count Trajectories"**
 
 ### Abstract
-Despite the discovery of precursor states to myeloid neoplasm (MNs), their large-scale screening is not yet possible. Here, we compared longitudinal blood count data from individuals who subsequently developed *de novo* acute myeloid leukemia (AML, N=365), myelodysplastic syndrome (MDS, N=629), and primary myelofibrosis (MF, N=69) to controls without later cancer diagnosis (N=121,739).
-
-By characterizing patient age, gender and pre-diagnostic blood count trajectories, we collected over 814M data points between 2002-2024 and developed machine learning models that accurately predicted the onset of MNs up to five years before clinical diagnosis. Notably, these models achieved high predictive accuracy without genomic profiling in contrast to other available pre-MN risk scores. We validated the models in both a hold-out and an independent test set (N=178 AML, N=450 MDS, N=41 MF, N=9,020 controls).
-
-By exploring the connection between blood counts and genomic hallmarks, we discovered various novel genotype-phenotype fingerprints of pre-MN state, for instance persistent granulocytosis preceding *JAK2*mut MF. These findings demonstrate the feasibility of early detection of pre-MN using routine laboratory measurements, facilitating personalized surveillance and early intervention.
+Myeloid neoplasm (MNs) precursor states cannot be effectively screened at large scale. Here, we compared longitudinal blood count data from individuals who subsequently developed de novo acute myeloid leukemia (AML, N=365), myelodysplastic syndrome (MDS, N=629), and primary myelofibrosis (MF, N=69) to controls (N=121,739). We collected over 814M data points covering patient age, gender and blood count trajectories between 2002-2024 and developed machine learning models predicting the onset of MNs up to five years before clinical diagnosis. We validated the models in both an internal and an external test set demonstrating high predictive accuracy without reliance on genomic profiling. By exploring the connection between blood counts and genomic hallmarks, we describe persistent granulocytosis as a promising precursor state of JAK2-mutated MF. These findings demonstrate the feasibility of early detection of pre-MN, facilitating personalized surveillance and early intervention.
 
 
 ## Repository Contents
