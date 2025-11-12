@@ -134,7 +134,7 @@ lagged_data4 <- lagged_data4 %>%
   group_by(henkilotunnus, variable) %>%
   
   # Imputation using interpolation
-  mutate(value_impute1 = zoo::na.approx(value_impute, na.rm = FALSE))
+  mutate(value_impute1 = zoo::na.locf(value_impute, fromLast = FALSE, na.rm = FALSE))
 
 # Statistics
 cor.test(lagged_data4[is.na(lagged_data4$value_impute),]$value_impute1, lagged_data4[is.na(lagged_data4$value_impute),]$value, method = "spearman")
@@ -152,8 +152,9 @@ cor.test(tt$value_impute1, tt$value, method = "spearman")
 g = ggplot(tt, aes(x = value_impute1, y = value)) +
   geom_point(size = 0.2, color = "black") +
   geom_smooth(method = "lm") +
-  labs(y="Imputed normalized laboratory value",
-       x="Original normalized laboratory value") +
+  labs(
+    y="Imputed normalized laboratory value",
+    x="Original normalized laboratory value") +
   stat_cor(method = "spearman",
            label.x = -1000,
            label.y = 2000) +
@@ -162,9 +163,9 @@ g = ggplot(tt, aes(x = value_impute1, y = value)) +
   theme_bw() +
   theme(axis.text.x = element_text(size=12, colour = "black"),
         axis.text.y = element_text(size=12, colour = "black"),
-        axis.title = element_text(size=14, colour = "black"),
+        axis.title = element_text(size=12, colour = "black"),
         axis.line = element_line(colour = "black"),
-        plot.title = element_text(size=14, face="bold", colour = "black"),
+        plot.title = element_text(size=12, face="bold", colour = "black"),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank(),

@@ -4,6 +4,7 @@
 # Libraries
 source("mounts/research/src/Rfunctions/library.R")
 library(cowplot)
+library(patchwork)
 
 # General parameters
 source("mounts/research/husdatalake/disease/scripts/Preleukemia/parameters")
@@ -166,7 +167,7 @@ for (i in diseases) {
   ############## WILCOXON TEST ##############
   
   
-  for (j in unique(df_m$tutkimus_lyhenne_yksikko)) {
+  for (j in unique(df_m$tutkimus_lyhenne_yksikko)[grep(pattern = "(B12|fP)", unique(df_m$tutkimus_lyhenne_yksikko), invert = TRUE)]) {
     for (k in (names(df_m)[((which(names(df_m) == "age")+1) : (which(names(df_m) == "OS_time")-1))])) {
       
       df_m1 = df_m %>%
@@ -219,18 +220,18 @@ for (i in diseases) {
       df_m1 = df_m %>%
         dplyr::filter(tutkimus_lyhenne_yksikko == j)
       df_m1$gene = ifelse(df_m1$ASXL1=="POS" | 
-                            df_m1$DNMT3A=="POS" | 
-                            df_m1$TET2=="POS" | 
-                            df_m1$SF3B1=="POS" |
-                            df_m1$SRSF2=="POS" | 
-                            df_m1$TP53=="POS", "POS",
-                          ifelse(is.na(df_m1$ASXL1) |
-                                   is.na(df_m1$DNMT3A) |
-                                   is.na(df_m1$TET2) |
-                                   is.na(df_m1$SF3B1) |
-                                   is.na(df_m1$SRSF2) |
-                                   is.na(df_m1$TP53), NA,
-                                 "NEG"))
+        df_m1$DNMT3A=="POS" | 
+          df_m1$TET2=="POS" | 
+          df_m1$SF3B1=="POS" |
+          df_m1$SRSF2=="POS" | 
+          df_m1$TP53=="POS", "POS",
+        ifelse(is.na(df_m1$ASXL1) |
+          is.na(df_m1$DNMT3A) |
+            is.na(df_m1$TET2) |
+            is.na(df_m1$SF3B1) |
+            is.na(df_m1$SRSF2) |
+            is.na(df_m1$TP53), NA,
+          "NEG"))
       
       df_m1 = df_m1 %>%
         dplyr::filter(!is.na(gene))
@@ -342,9 +343,16 @@ for (i in diseases) {
     df_c1 = df_c %>%
       dplyr::filter(tutkimus_lyhenne_yksikko == unique(df$tutkimus_lyhenne_yksikko)[lab1])# %>%
     
-    df_c1 = df_c1 %>%
-      dplyr::mutate(tulos_norm_scaled = scales::rescale(x = tulos_norm, to = c(0,1))) %>%
-      dplyr::mutate(tulos_norm_cat = ntile(tulos_norm, 3))
+    if (lab1 %in% c("B-Erblast (E9/l)", "E-RDW (%)", "B-Neut (E9/l)", "B-Monos (E9/l)", "P-FiDD (mg/l)", "L-Mono (%)") ) {
+      df_c1 = df_c1 %>%
+        dplyr::mutate(tulos_norm_scaled = scales::rescale(x = tulos_norm, to = c(0,1))) %>%
+        dplyr::mutate(tulos_norm_cat = ifelse(tulos_norm >= quantile(df_c1$tulos_norm, probs = 0.67, na.rm = TRUE), 1, 0))
+    } else {
+      df_c1 = df_c1 %>%
+        dplyr::mutate(tulos_norm_scaled = scales::rescale(x = tulos_norm, to = c(0,1))) %>%
+        dplyr::mutate(tulos_norm_cat = ifelse(tulos_norm <= quantile(df_c1$tulos_norm, probs = 0.33, na.rm = TRUE), 1, 0))
+    }
+    
     
     # Cox regression
     multiple_t_tests_p_value = summary(coxph(Surv(OS_time, OS_event)~tulos_norm_scaled, data = df_c1))
@@ -397,8 +405,8 @@ for (i in diseases) {
                      censor.size = 4,
                      font.legend = c(13, "bold", "black"),    #font voi olla esim. "bold" tai "plain"
                      legend.title = unique(df$tutkimus_lyhenne_yksikko)[lab1],
-                     legend.labs = c("Low", "Intermediate", "High"))
-      
+                     legend.labs = c("Low", "High")); g
+      g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(6,2))
       ggsave(plot = g, filename = paste0(results, "/", i, "/KM/", janitor::make_clean_names(unique(df$tutkimus_lyhenne_yksikko)[lab1]), ".png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     } 
   }
@@ -423,7 +431,6 @@ res1 <- res %>%
   mutate(
     fold.change.log10 = log(as.numeric(HR), 10),
     pvalue = as.numeric(pvalue),
-    # adj.p.log10 = log(p.value_adj, 10),
     sig = ifelse(pvalue>=0.05, "ns",
                  ifelse(HR >= 1, "HR≥1", "HR<1"))
   )
@@ -439,7 +446,6 @@ g = ggplot(res1, aes(fold.change.log10, -log10(pvalue))) +
                            override.aes = list(size = 5)),
          size = FALSE) +
   theme_bw() +
-  xlim(-2, 6) +
   theme(legend.direction = 'horizontal', 
         legend.key = element_rect(size = 5),
         legend.key.size = unit(1.5, 'lines'),
@@ -452,7 +458,6 @@ g = ggplot(res1, aes(fold.change.log10, -log10(pvalue))) +
         panel.grid.minor = element_blank(),
         legend.position = "bottom") +
   scale_fill_manual(values=c("#BF9F45", "#348ABD", "#2B6E2A")) +
-  # scale_fill_brewer(palette = "Set1") +
   geom_text_repel(data=res1[res1$pvalue<0.05,],
                   size=3.5,
                   aes(label=covariate,
@@ -504,17 +509,18 @@ for (i in diseases) {
   lab_dg1 = lab_dg %>%
     dplyr::inner_join(tr3)
   
-  
   ## Categorize
   lab_dg1$RDW1 = ntile(lab_dg1$RDW, 3)
   
   ta = lab_dg1 %>% group_by(RDW1) %>% summarise(RDW = mean(RDW), RDW_min = min(RDW))
   
   fit = survfit(Surv(OS_time, OS_event)~RDW1, data = lab_dg1)
+  fit <- list(fit = fit)
   
   g = ggsurvplot(fit,
                  data = lab_dg1,
-                 palette = "Set1",
+                 combine = TRUE,
+                 palette = c("#984ea3", "#ff7f00", "#a65628"),
                  size = 2,   #line thickness
                  ggtheme = theme_minimal(), #theme
                  font.main = c(15, "black"), #title font
@@ -537,12 +543,15 @@ for (i in diseases) {
                  xlab = "Time (years)",
                  censor = TRUE,
                  censor.shape = 108,
-                 censor.size = 4,
-                 font.legend = c(13, "bold", "black"),    #font voi olla esim. "bold" tai "plain"
+                 censor.size = 4,    #font voi olla esim. "bold" tai "plain"
                  legend.title = "E-RDW (%)",
                  legend.labs = c(paste0("≥", round(ta$RDW_min[1], 1), "%"),
                                  paste0("≥", round(ta$RDW_min[2], 1), "%"),
-                                 paste0("≥", round(ta$RDW_min[3], 1), "%"))); g
+                                 paste0("≥", round(ta$RDW_min[3], 1), "%")),
+                 font.legend = c(13, "bold", "black")); g
+  g$plot = g$plot + guides(colour = guide_legend(nrow = 1))
+  g$table = g$table + guides(colour = "none")
+  g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(5,2))
   ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_OS_all_patients.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
   
   
@@ -594,7 +603,7 @@ for (i in diseases) {
     g = ggsurvplot(fit,
                    data = lab_dg2,
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#e41a1c", "#377eb8", "#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -630,19 +639,22 @@ for (i in diseases) {
                label = p2,
                size = 5); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 2)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 2))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + plot_layout(heights=c(6,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_TP53_OS_all_patients.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
     
     # Kaplan Meier with RDW but only TP53wt patients
     fit = survfit(Surv(OS_time, OS_event)~RDW, data = lab_dg2[lab_dg2$TP53=="NEG",])
+    fit <- list(fit = fit)
     
     # Plot
     g = ggsurvplot(fit,
                    data = lab_dg2[lab_dg2$TP53=="NEG",],
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -672,7 +684,8 @@ for (i in diseases) {
                                    paste0("≥", round(ta$RDW_min[3], 1), "%")),
                    font.legend = c(12, "bold", "black")); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 1)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + plot_layout(heights=c(6,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_TP53wt_OS_all_patients.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
   }
@@ -680,15 +693,18 @@ for (i in diseases) {
   if (i == "MF") {
     
     # Kaplan Meier with RDW and DIPSS risk status
-    lab_dg2$DIPSS = factor(lab_dg2$DIPSS, levels = c("Low", "Intermediate-1", "Intermediate-2", "High"))
+    lab_dg2$DIPSS1 = ifelse(lab_dg2$DIPSS %in% c("Intermediate-2", "High"), "Int-2/High",
+                            ifelse(lab_dg2$DIPSS == "Low", "Low", "Int-1"))
+    # lab_dg2$DIPSS1 = factor(lab_dg2$DIPSS1, levels = c("Low", "Intermediate-1", "Intermediate-2", "High"))
+    lab_dg2$DIPSS1 = factor(lab_dg2$DIPSS1, levels = c("Low", "Int-1", "Int-2/High"))
     
     # Kaplan Meier with both RDW and TP53
-    fit1 = survfit(Surv(OS_time, OS_event)~DIPSS, data = lab_dg2)
+    fit1 = survfit(Surv(OS_time, OS_event)~DIPSS1, data = lab_dg2)
     fit2 = survfit(Surv(OS_time, OS_event)~RDW, data = lab_dg2)
-    fit <- list(DIPSS = fit1, RDW = fit2)
+    fit <- list(DIPSS1 = fit1, RDW = fit2)
     
     # Get p-values
-    p1 <- 1 - pchisq(survdiff(Surv(OS_time, OS_event) ~ DIPSS, data = lab_dg2)$chisq, 1)
+    p1 <- 1 - pchisq(survdiff(Surv(OS_time, OS_event) ~ DIPSS1, data = lab_dg2)$chisq, 1)
     p1 = ifelse(p1 < 0.001, "DIPSS p<0.001",
                 ifelse(p1 < 0.01, "DIPSS p<0.01",
                        ifelse(p1 < 0.05, "DIPSS p<0.05", "DIPSS ns")))
@@ -702,7 +718,7 @@ for (i in diseases) {
     g = ggsurvplot(fit,
                    data = lab_dg2,
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -723,12 +739,11 @@ for (i in diseases) {
                    risk.table.height = 0.20,
                    ylab = "OS event (%)",
                    xlab = "Time (years)",
-                   # xlim = c(0,86),
                    censor = TRUE,
                    censor.shape = 108,
                    censor.size = 4,
                    legend.title = "",
-                   legend.labs = c("DIPSS Low", "DIPSS Int-1", "DIPSS Int-2", "DIPSS High",
+                   legend.labs = c("DIPSS Low", "DIPSS Int-1", "DIPSS Int-2/High",
                                    paste0("RDW ≥", round(ta$RDW_min[1], 1), "%"),
                                    paste0("RDW ≥", round(ta$RDW_min[2], 1), "%"),
                                    paste0("RDW ≥", round(ta$RDW_min[3], 1), "%")),
@@ -742,7 +757,9 @@ for (i in diseases) {
                label = p2,
                size = 5); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 3)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 3))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + plot_layout(heights=c(5,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_DIPSS_OS.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
@@ -774,7 +791,7 @@ for (i in diseases) {
     g = ggsurvplot(fit,
                    data = lab_dg2,
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -795,7 +812,6 @@ for (i in diseases) {
                    risk.table.height = 0.25,
                    ylab = "OS event (%)",
                    xlab = "Time (years)",
-                   # xlim = c(0,86),
                    censor = TRUE,
                    censor.shape = 108,
                    censor.size = 4,
@@ -814,7 +830,10 @@ for (i in diseases) {
                label = p2,
                size = 5); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 2)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    # g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 2)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 3))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(6,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_ELN_OS.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
@@ -824,8 +843,10 @@ for (i in diseases) {
   if (i == "MDS") {
     
     # Kaplan Meier with RDW and IPSSR risk status
-    lab_dg2$IPSSR1 = lab_dg2$IPSSR
-    lab_dg2$IPSSR1 = factor(lab_dg2$IPSSR1, levels = c("Very low", "Low", "Intermediate", "High", "Very high"))
+    lab_dg2$IPSSR1 = ifelse(lab_dg2$IPSSR %in% c("Very low", "Low"), "Very low/Low",
+                            ifelse(lab_dg2$IPSSR == "Intermediate", "Int",
+                                   ifelse(lab_dg2$IPSSR %in% c("High", "Very high"), "High/Very high", NA)))
+    lab_dg2$IPSSR1 = factor(lab_dg2$IPSSR1, levels = c("Very low/Low", "Int", "High/Very high"))
     
     # Kaplan Meier with both RDW and TP53
     fit1 = survfit(Surv(OS_time, OS_event)~IPSSR1, data = lab_dg2)
@@ -846,7 +867,7 @@ for (i in diseases) {
     g = ggsurvplot(fit,
                    data = lab_dg2,
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -871,7 +892,7 @@ for (i in diseases) {
                    censor.shape = 108,
                    censor.size = 4,
                    legend.title = "",
-                   legend.labs = c("IPSSR very low", "IPSSR low", "IPSSR inter", "IPSSR high", "IPSSR very high",
+                   legend.labs = c("IPSSR Very low/Low", "IPSSR Int", "IPSSR High/Very high",
                                    paste0("RDW ≥", round(ta$RDW_min[1], 1), "%"),
                                    paste0("RDW ≥", round(ta$RDW_min[2], 1), "%"),
                                    paste0("RDW ≥", round(ta$RDW_min[3], 1), "%")),
@@ -885,7 +906,10 @@ for (i in diseases) {
                label = p2,
                size = 5); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 3)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    # g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 3)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 3))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(5,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_IPSSR_OS.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
@@ -924,7 +948,7 @@ for (i in diseases) {
     g = ggsurvplot(fit,
                    data = lab_dg2,
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -960,7 +984,9 @@ for (i in diseases) {
                label = p2,
                size = 5); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 2)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 3))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(6,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_TP53_OS_all_patients_HDC.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
@@ -972,7 +998,7 @@ for (i in diseases) {
     g = ggsurvplot(fit,
                    data = lab_dg2,
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -1002,19 +1028,22 @@ for (i in diseases) {
                                    paste0("≥", round(ta$RDW_min[3], 1), "%")),
                    font.legend = c(12, "bold", "black")); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 1)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 1))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(6,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_OS_all_patients_HDC.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
     
     # Kaplan Meier with RDW but only TP53wt patients
     fit = survfit(Surv(OS_time, OS_event)~RDW1, data = lab_dg2[lab_dg2$TP53=="NEG",])
+    fit <- list(fit = fit)
     
     # Plot
     g = ggsurvplot(fit,
                    data = lab_dg2[lab_dg2$TP53=="NEG",],
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -1044,7 +1073,9 @@ for (i in diseases) {
                                    paste0("≥", round(ta$RDW_min[3], 1), "%")),
                    font.legend = c(12, "bold", "black")); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 1)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 1))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(5,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_TP53wt_OS_all_patients_HDC.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
@@ -1073,7 +1104,7 @@ for (i in diseases) {
     g = ggsurvplot(fit,
                    data = lab_dg2,
                    combine = TRUE,
-                   palette = "Set1",
+                   palette = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"),
                    size = 2,   #line thickness
                    ggtheme = theme_minimal(), #theme
                    font.main = c(15, "black"), #title font
@@ -1112,7 +1143,9 @@ for (i in diseases) {
                label = p2,
                size = 5); g
     
-    g = plot_grid(g$plot + guides(colour = guide_legend(nrow = 2)), g$table +  guides(colour = "none"), ncol = 1, align = "v", rel_heights = c(2, 1))
+    g$plot = g$plot + guides(colour = guide_legend(nrow = 3))
+    g$table = g$table + guides(colour = "none")
+    g = g$plot/g$table + guides(colour = "none") + plot_layout(heights=c(5,2))
     
     ggsave(plot = g, filename = paste0(results, "/", i, "/KM/RDW_ELN_OS_HDC.png"), width = 6, height = 6, bg = "white", units = 'in', dpi = 300)
     
@@ -1120,33 +1153,3 @@ for (i in diseases) {
   }
   
 }
-
-
-############## TP53 MUTATION TYPE ##############
-
-
-# Read myelmut
-myelmut = readxl::read_xlsx("mounts/research/husdatalake/data/pathology/qpati/myelmut.xlsx") %>%
-  dplyr::filter(Gene == "TP53") %>%
-  distinct()
-## Number of mutations
-myelmut_samples = myelmut %>%
-  dplyr::arrange(sampletaken) %>%
-  dplyr::group_by(henkilotunnus) %>%
-  slice(1) %>%
-  ungroup()
-myelmut1 = myelmut %>%
-  dplyr::filter(samplenumber %in% myelmut_samples$samplenumber) %>%
-  dplyr::group_by(henkilotunnus, samplenumber) %>%
-  mutate(TP53_n = n())
-## VAF
-myelmut2 = myelmut %>%
-  dplyr::filter(samplenumber %in% myelmut_samples$samplenumber) %>%
-  dplyr::group_by(henkilotunnus, samplenumber) %>%
-  mutate(TP53_vaf = max(VAF, na.rm=TRUE),
-         TP53_vaf = gsub(",", ".", TP53_vaf),
-         TP53_vaf = as.numeric(TP53_vaf))
-## Combine
-myelmut3 = full_join(myelmut1 %>% dplyr::select(henkilotunnus, sampletaken, TP53_n),
-                     myelmut2 %>% dplyr::select(henkilotunnus, sampletaken, TP53_vaf)) %>%
-  distinct()

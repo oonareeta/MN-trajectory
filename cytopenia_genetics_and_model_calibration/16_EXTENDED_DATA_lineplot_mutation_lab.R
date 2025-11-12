@@ -127,8 +127,15 @@ for (i in disease) {
       
       
       # Remove
-      df2 = df2 %>%
-        dplyr::filter(!x1 == "")
+      if (nrow(df2) > 5000) {
+        df2 = df2 %>%
+          dplyr::filter(!x1 == "")
+        if (nrow(df2) > 5000) {
+          df2 = df2 %>%
+            dplyr::filter(!x1 == "") %>%
+            dplyr::sample_n(5000)
+        }
+      }
       
       # Plot
       # b_neut_e9_l_tulos_norm

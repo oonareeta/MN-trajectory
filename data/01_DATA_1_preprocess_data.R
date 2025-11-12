@@ -57,20 +57,20 @@ for (i in c("MDS", "MF", "de novo AML")) {
   print(paste0("Processing ", i))
   
   # Read demo
-  i="MDS"
   df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
   
   
-  # Join data from healthy subjects
+  # Read lab data for healthy subjects
   df2_2 = df1 %>%
     dplyr::distinct()
   df2 = df2_2 %>%
     dplyr::left_join(healthy) %>%
-    dplyr::mutate(tulos_norm = tulos - tulos_healthy); rm(df2_2)
+    dplyr::mutate(tulos_norm = tulos - tulos_healthy); rm(df2_2) #rm(df2_1, df2_2)
   
   # Process data
   df2 = df2 %>%
     arrange(henkilotunnus, tutkimus_lyhenne_yksikko, time_to_dg)
+  
   
   
   # If two values on the same day AND the test names are starting with "L-" AND the other is 0.01 > remove the 0.01
@@ -100,11 +100,17 @@ for (i in c("MDS", "MF", "de novo AML")) {
   
   print("Saving 1")
   
-  
+  # As we have run already the data for healthy subjects, we will run only disease data for MF and de novo AML
+  # In the end of the script we will add the healthy data
+  if (i %in% c("MF", "de novo AML")) {
+    df2 = df2 %>%
+      dplyr::filter(henkilotunnus %in% unique(df1$henkilotunnus))
+  }
   lagged_data <- df2
   
   
-  # Next create dynamic variables
+  # Next
+  ## Create event (disease vs. no-disease) and time from sample to disease or last follow-up (kuolinpäivä or 31-12-2023)
   # Log
   writeLines(c(""), "mounts/research/husdatalake/disease/processed_data/Preleukemia/log_lagged_data.txt")
   sink("mounts/research/husdatalake/disease/processed_data/Preleukemia/log_lagged_data.txt", append=TRUE)
@@ -117,8 +123,6 @@ for (i in c("MDS", "MF", "de novo AML")) {
   
   # Pre-split by ID to avoid filtering inside the loop
   split_data <- split(lagged_data, by = "henkilotunnus")
-  
-  # Parallel backend
   
   # Counter for tracking
   lagged_data_1 = foreach(
@@ -197,7 +201,6 @@ for (i in c("MDS", "MF", "de novo AML")) {
   rm(df, df1, df2, lagged_data)
   gc()
   
-  
   # Export
   ptsn = length(unique(lagged_data1$henkilotunnus))
   ptsl = unique(lagged_data1$henkilotunnus)
@@ -225,17 +228,12 @@ for (i in c("MDS", "MF", "de novo AML")) {
     dplyr::mutate(disease = i) %>%
     dplyr::filter(!(disease=="Healthy" & time_to_dg>-365)) %>%
     dplyr::mutate(event_1y = ifelse(time_to_dg >-365, -1/time_to_dg, 0))
-  
   lagged_data1 = lagged_data1 %>%
     dplyr::select(henkilotunnus, time_to_dg, disease, event_1y, sukupuoli_selite, age, everything())
-  
   # Rename
   lagged_data1 = lagged_data1 %>%
     janitor::clean_names()
   
-  
-  # Remove variables
-  names(lagged_data1)
   
   # Identify columns that contain both conditions
   cols_to_remove <- names(lagged_data1)[grepl("(ferrit|crp|trigly|kol|gf_re|p_tt|crea|b_la)", names(lagged_data1)) &
@@ -244,7 +242,7 @@ for (i in c("MDS", "MF", "de novo AML")) {
   lagged_data1 <- lagged_data1[ , !(names(lagged_data1) %in% cols_to_remove)]
   
   
-# Save
+  # Save
   saveRDS(lagged_data1, paste0(export, "/lagged_data_", i, "2.rds"))
   fwrite(lagged_data1, paste0(export, "/lagged_data_", i, "2.csv"))
   
@@ -275,13 +273,6 @@ for (i in c("MDS", "MF", "de novo AML")) {
     dplyr::select(-all_of(names(lagged_data1)[grep(pattern = "i_ind", ignore.case = TRUE, names(lagged_data1))])) %>%
     dplyr::select(-all_of(names(lagged_data1)[grep(pattern = "l_atyp_ly_percent", ignore.case = TRUE, names(lagged_data1))]))
   
-  # Manually impute NA to 0.01 for erblast as these are by default 0 if not reported
-  lagged_data1$b_erblast_e9_l_tulos_norm = ifelse(is.na(lagged_data1$b_erblast_e9_l_tulos_norm), 0.01, lagged_data1$b_erblast_e9_l_tulos_norm)
-  lagged_data1$b_erblast_e9_l_trend_from_365_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_365_d), 0, lagged_data1$b_erblast_e9_l_trend_from_365_d)
-  lagged_data1$b_erblast_e9_l_trend_from_1095_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1095_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1095_d)
-  lagged_data1$b_erblast_e9_l_trend_from_1825_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1825_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1825_d)
-  nrow(lagged_data1[!is.na(lagged_data1$b_monos_e9_l_tulos_norm),])
-  
   # Exclude patients with wrong diagnosis
   exclude = readxl::read_xlsx(paste0("mounts/research/husdatalake/disease/general/exclude_pts.xlsx"))
   if (i == "de novo AML") {
@@ -303,60 +294,90 @@ for (i in c("MDS", "MF", "de novo AML")) {
   # Save
   saveRDS(lagged_data1, paste0(export, "/lagged_data_", i, "3.rds"))
   print("Saving 5")
+  
   gc()
 }
 
+# Order variables
+lagged_data1 = readRDS(paste0(export, "/lagged_data_MDS3.rds"))
+lagged_data2 = readRDS(paste0(export, "/lagged_data_MF3.rds"))
+lagged_data3 = readRDS(paste0(export, "/lagged_data_de novo AML3.rds"))
+lagged_data2 = lagged_data2 %>%
+  dplyr::select(names(lagged_data1))
+lagged_data3 = lagged_data3 %>%
+  dplyr::select(names(lagged_data1))
+saveRDS(lagged_data2, paste0(export, "/lagged_data_MF3.rds"))
+saveRDS(lagged_data3, paste0(export, "/lagged_data_de novo AML3.rds"))
+rm(lagged_data1, lagged_data2, lagged_data3)
+
+
 # Impute missing data
+
 for (i in c("MDS", "MF", "de novo AML")) {
   
-  print(i)
-  
   # Load data
-  lagged_data1 = readRDS(paste0(export, "/lagged_data_", i, "3.rds"))
+  lagged_data1 = readRDS(paste0(export, "/lagged_data_", i, "3.rds")) %>%
+    mutate_all(~ifelse(is.nan(.), NA, .))
+  
+  ## Uncertainty
+  lagged_data1_un <- lagged_data1 %>%
+    group_by(henkilotunnus) %>%
+    mutate(across(
+      (which(names(.) == "age") ):(ncol(.) - 1),
+      ~ ifelse(is.na(.x), 0, 1)
+    )) %>%
+    ungroup()
+  names(lagged_data1_un)[(which(names(lagged_data1)=="age")+1):(ncol(lagged_data1))] = paste0("uncertainty_", names(lagged_data1_un)[(which(names(lagged_data1)=="age")+1):(ncol(lagged_data1))])
+  lagged_data1_un = lagged_data1_un %>%
+    dplyr::select(-contains("rows_in_last"))
+  
   # Impute non NA
   ## Fill NAs with last non-NA
-  ### First fill with linear interpolation
+  ### First fill with last available value
   lagged_data1 <- lagged_data1 %>%
     dplyr::select(henkilotunnus, time_to_dg, disease, event_1y, sukupuoli_selite, age, rows_in_last_month, rows_in_last_year, contains("val_"), everything())
   lagged_data1 <- lagged_data1 %>%
     mutate_all(~ifelse(is.nan(.), NA, .)) %>%
     group_by(henkilotunnus) %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):(ncol(.)-1), ~zoo::na.approx(., na.rm = FALSE)))
+    mutate(across((which(names(.)=="age")):(ncol(.)-1), ~zoo::na.locf(., fromLast = FALSE, na.rm = FALSE)))
   ### Then fill upwards
   lagged_data1 <- lagged_data1 %>%
     group_by(henkilotunnus) %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):(ncol(.)-1), ~zoo::na.locf(., fromLast = TRUE, na.rm = FALSE)))
-  ### Then fill downwards
-  lagged_data1 <- lagged_data1 %>%
-    group_by(henkilotunnus) %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):(ncol(.)-1), ~zoo::na.locf(., na.rm = FALSE)))
+    mutate(across((which(names(.)=="age")):(ncol(.)-1), ~zoo::na.locf(., fromLast = TRUE, na.rm = FALSE)))
   ## For the rest (= all values missing for a lab test for a patient), impute 0
   lagged_data1 <- lagged_data1 %>%
     ungroup() %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):ncol(.)-1, ~ifelse(is.na(.), 0, .)))
+    mutate(across((which(names(.)=="age")):ncol(.)-1, ~ifelse(is.na(.), 0, .)))
+  
+  # Join uncertainty
+  lagged_data1 <- lagged_data1 %>%
+    dplyr::left_join(lagged_data1_un)
   
   # Keep only adults
   lagged_data1 = lagged_data1 %>%
     dplyr::filter(age >= 18)
-
   
-  # Log
-  writeLines(c(""), "mounts/research/husdatalake/disease/processed_data/Preleukemia/log_lagged_data.txt")
-  sink("mounts/research/husdatalake/disease/processed_data/Preleukemia/log_lagged_data.txt", append=TRUE)
+  # Manually impute NA to 0.01 for erblast as these are by default 0 if not reported
+  lagged_data1$b_erblast_e9_l_tulos_norm = ifelse(is.na(lagged_data1$b_erblast_e9_l_tulos_norm), 0.01, lagged_data1$b_erblast_e9_l_tulos_norm)
+  lagged_data1$b_erblast_e9_l_trend_from_365_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_365_d), 0, lagged_data1$b_erblast_e9_l_trend_from_365_d)
+  lagged_data1$b_erblast_e9_l_trend_from_1095_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1095_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1095_d)
+  lagged_data1$b_erblast_e9_l_trend_from_1825_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1825_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1825_d)
+  
   
   # Export
-  cat(paste("Export", length(unique(lagged_data1$henkilotunnus)), "\n"))
+  cat(paste("Export", length(unique(lagged_data1_un$henkilotunnus)), "\n"))
   
   # Convert once to data.table
-  setDT(lagged_data1)
+  setDT(lagged_data1_un)
   
   # Identify relevant columns
-  norm_cols <- grep("_norm", names(lagged_data1), value = TRUE)
+  norm_cols <- grep("_norm", names(lagged_data1_un), value = TRUE)
+  norm_cols <- grep("uncertainty_", norm_cols, value = TRUE)
+  norm_cols <- grep("_val_", norm_cols, value = TRUE, invert = TRUE)
   
   # Pre-split by ID to avoid filtering inside the loop
-  split_data <- split(lagged_data1, by = "henkilotunnus")
+  split_data <- split(lagged_data1_un, by = "henkilotunnus")
   
-  # Parallelized loop
   lagged_data_1 <- foreach(
     person_data = split_data,
     .packages = "data.table",
@@ -364,7 +385,7 @@ for (i in c("MDS", "MF", "de novo AML")) {
   ) %dopar% {
     
     # Ensure time is ordered
-    person_data <- person_data[order(time_to_dg)]
+    person_data <- person_data[order(desc(time_to_dg))]
     
     res_list <- vector("list", nrow(person_data))
     
@@ -377,9 +398,9 @@ for (i in c("MDS", "MF", "de novo AML")) {
       )
       
       for (col in norm_cols) {
-        vals_365  <- person_data[[col]][person_data$time_to_dg < x & person_data$time_to_dg >= (x - 365)]
-        vals_1095 <- person_data[[col]][person_data$time_to_dg < (x - 365) & person_data$time_to_dg >= (x - 1095)]
-        vals_1825 <- person_data[[col]][person_data$time_to_dg < (x - 1095) & person_data$time_to_dg >= (x - 1825)]
+        vals_365  <- person_data[[col]][person_data[[col]]==1 & person_data$time_to_dg > (x + 90) & person_data$time_to_dg <= (x + 365)]
+        vals_1095 <- person_data[[col]][person_data[[col]]==1 & person_data$time_to_dg > (x + 365) & person_data$time_to_dg <= (x + 1095)]
+        vals_1825 <- person_data[[col]][person_data[[col]]==1 & person_data$time_to_dg > (x + 1095) & person_data$time_to_dg <= (x + 1825)]
         
         out[[paste0(col, "_val_365_n")]]  <- sum(!is.na(vals_365))
         out[[paste0(col, "_val_1095_n")]] <- sum(!is.na(vals_1095))
@@ -393,6 +414,7 @@ for (i in c("MDS", "MF", "de novo AML")) {
   }
   
   lagged_data_1 = as.data.frame(lagged_data_1)
+  names(lagged_data_1) = gsub("uncertainty_", "", names(lagged_data_1))
   
   lagged_data1 = lagged_data1 %>%
     dplyr::select(-contains("_val_")) %>%
@@ -406,6 +428,7 @@ for (i in c("MDS", "MF", "de novo AML")) {
   # Save
   saveRDS(lagged_data1, paste0(export, "/lagged_data_", i, "3.rds"))
   fwrite(lagged_data1, paste0(export, "/lagged_data_", i, "3.csv"))
+  
 }
 
 
@@ -415,7 +438,6 @@ for (i in c("MDS", "MF", "de novo AML")) {
 # Loop
 filelist = list.files(path = "mounts/research/husdatalake/disease/data/Preleukemia/multilab3", pattern = "file[[:digit:]]*\\.parquet", full.names = TRUE)
 
-
 for (i in 1:length(filelist)) {
   
   # for (i in c("secondary AML")) {
@@ -424,16 +446,17 @@ for (i in 1:length(filelist)) {
   # Read demo
   df1 = arrow::read_parquet(filelist[i])
   
-  # Read lab data for  healthy subjects
+  # Read lab data for 10000 healthy subjects
   df2_2 = df1 %>%
     dplyr::distinct()
   
   df2 = df2_2 %>%
     dplyr::left_join(healthy) %>%
-    dplyr::mutate(tulos_norm = tulos - tulos_healthy); rm(df2_2)
+    dplyr::mutate(tulos_norm = tulos - tulos_healthy); rm(df2_2) #rm(df2_1, df2_2)
   
   # Process data
   df2 = df2 %>%
+    # dplyr::filter(tutkimus_lyhenne_yksikko %in% labtests2$Variable) %>%
     arrange(henkilotunnus, tutkimus_lyhenne_yksikko, time_to_dg)
   
   
@@ -459,7 +482,6 @@ for (i in 1:length(filelist)) {
   
   # Export data
   df3 = df2 %>%
-    # dplyr::filter(!henkilotunnus %in% unique(df1$henkilotunnus)) %>%
     dplyr::select(henkilotunnus, time_to_dg, tutkimus_lyhenne_yksikko, tulos, tulos_healthy, tulos_norm, sukupuoli_selite, age) %>% 
     distinct()
   dir.create(paste0(paste0(export, "/healthy")))
@@ -470,7 +492,6 @@ for (i in 1:length(filelist)) {
   lagged_data <- df2
   
   
-  # Create dynamic variables
   # Log
   writeLines(c(""), "mounts/research/husdatalake/disease/processed_data/Preleukemia/log_lagged_data.txt")
   sink("mounts/research/husdatalake/disease/processed_data/Preleukemia/log_lagged_data.txt", append=TRUE)
@@ -483,6 +504,7 @@ for (i in 1:length(filelist)) {
   
   # Pre-split by ID to avoid filtering inside the loop
   split_data <- split(lagged_data, by = "henkilotunnus")
+  
   
   # Counter for tracking
   lagged_data_1 = foreach(
@@ -541,6 +563,7 @@ for (i in 1:length(filelist)) {
   # Save
   lagged_data = lagged_data_1; rm(lagged_data_1)
   saveRDS(lagged_data, paste0(export, "/healthy/lagged_data_", i, "_.rds"))
+  
   print("Saving 2")
   
   
@@ -558,6 +581,7 @@ for (i in 1:length(filelist)) {
   
   rm(df1, df2, lagged_data)
   gc()
+  
   
   # Export
   ptsn = length(unique(lagged_data1$henkilotunnus))
@@ -583,6 +607,7 @@ for (i in 1:length(filelist)) {
   
   # Save
   saveRDS(lagged_data1, paste0(export, "/healthy/lagged_data_", i, "_1.rds"))
+  
   print("Saving 3")
   
   ## Process outcome for healthy
@@ -590,10 +615,8 @@ for (i in 1:length(filelist)) {
     dplyr::mutate(disease = "Healthy") %>%
     dplyr::filter(!(disease=="Healthy" & time_to_dg>-365)) %>%
     dplyr::mutate(event_1y = ifelse(time_to_dg >-365, -1/time_to_dg, 0))
-  
   lagged_data1 = lagged_data1 %>%
     dplyr::select(henkilotunnus, time_to_dg, disease, event_1y, sukupuoli_selite, age, everything())
-  
   # Rename
   lagged_data1 = lagged_data1 %>%
     janitor::clean_names()
@@ -628,17 +651,6 @@ for (i in 1:length(filelist)) {
     dplyr::select(-all_of(names(lagged_data1)[grep(pattern = "i_ind", ignore.case = TRUE, names(lagged_data1))])) %>%
     dplyr::select(-all_of(names(lagged_data1)[grep(pattern = "l_atyp_ly_percent", ignore.case = TRUE, names(lagged_data1))]))
   
-  # Manually impute NA to 0.01 for erblast as these are by default 0 if not reported
-  lagged_data1$b_erblast_e9_l_tulos_norm = ifelse(is.na(lagged_data1$b_erblast_e9_l_tulos_norm), 0.01, lagged_data1$b_erblast_e9_l_tulos_norm)
-  lagged_data1$b_erblast_e9_l_mean_last_values_365_days = ifelse(is.na(lagged_data1$b_erblast_e9_l_mean_last_values_365_days), 0.01, lagged_data1$b_erblast_e9_l_mean_last_values_365_days)
-  lagged_data1$b_erblast_e9_l_mean_last_values_1825_days = ifelse(is.na(lagged_data1$b_erblast_e9_l_mean_last_values_1825_days), 0.01, lagged_data1$b_erblast_e9_l_mean_last_values_1825_days)
-  lagged_data1$b_erblast_e9_l_mean_last_values_1095_days = ifelse(is.na(lagged_data1$b_erblast_e9_l_mean_last_values_1095_days), 0.01, lagged_data1$b_erblast_e9_l_mean_last_values_1095_days)
-  lagged_data1$b_erblast_e9_l_trend_from_365_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_365_d), 0, lagged_data1$b_erblast_e9_l_trend_from_365_d)
-  lagged_data1$b_erblast_e9_l_trend_from_1095_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1095_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1095_d)
-  lagged_data1$b_erblast_e9_l_trend_from_1825_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1825_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1825_d)
-  nrow(lagged_data1[!is.na(lagged_data1$b_monos_e9_l_tulos_norm),])
-  
-  
   # Remove if fewer than 3 rows per patient
   lagged_data1_sr = lagged_data1 %>%
     group_by(henkilotunnus) %>%
@@ -654,50 +666,76 @@ for (i in 1:length(filelist)) {
   gc()
 }
 
-# Impute missing data
 listfiles1 = list.files(paste0(export, "/healthy"), pattern = "_3.rds", full.names = TRUE)
+
+tt_names = names(readRDS(listfiles1[1]))
 for (i in 1:length(listfiles1)) {
+  
   print(i)
+  
   # Load data
-  lagged_data1 = readRDS(listfiles1[i])
+  lagged_data1 = readRDS(listfiles1[i]) %>%
+    mutate_all(~ifelse(is.nan(.), NA, .)) %>%
+    dplyr::select(all_of(tt_names))
+  
+  ## Uncertainty
+  lagged_data1_un <- lagged_data1 %>%
+    group_by(henkilotunnus) %>%
+    mutate(across(
+      (which(names(.) == "age")):(ncol(.) - 1),
+      ~ ifelse(is.na(.x), 0, 1)
+    )) %>%
+    ungroup()
+  names(lagged_data1_un)[(which(names(lagged_data1)=="age")+1):(ncol(lagged_data1))] = paste0("uncertainty_", names(lagged_data1_un)[(which(names(lagged_data1)=="age")+1):(ncol(lagged_data1))])
+  lagged_data1_un = lagged_data1_un %>%
+    dplyr::select(-contains("rows_in_last"))
+  
   # Impute non NA
   ## Fill NAs with last non-NA
-  ### First fill downwards with linear interpolation
+  ### First fill downwards with last available value
   lagged_data1 <- lagged_data1 %>%
     dplyr::select(henkilotunnus, time_to_dg, disease, event_1y, sukupuoli_selite, age, rows_in_last_month, rows_in_last_year, contains("val_"), everything())
   lagged_data1 <- lagged_data1 %>%
     mutate_all(~ifelse(is.nan(.), NA, .)) %>%
     group_by(henkilotunnus) %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):(ncol(.)-1), ~zoo::na.approx(., na.rm = FALSE)))
+    mutate(across((which(names(.)=="age")):(ncol(.)-1), ~zoo::na.locf(., fromLast = FALSE, na.rm = FALSE)))
   ### Then fill upwards
   lagged_data1 <- lagged_data1 %>%
     group_by(henkilotunnus) %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):(ncol(.)-1), ~zoo::na.locf(., fromLast = TRUE, na.rm = FALSE)))
-  ### Then fill downwards
-  lagged_data1 <- lagged_data1 %>%
-    group_by(henkilotunnus) %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):(ncol(.)-1), ~zoo::na.locf(., na.rm = FALSE)))
+    mutate(across((which(names(.)=="age")):(ncol(.)-1), ~zoo::na.locf(., fromLast = TRUE, na.rm = FALSE)))
   ## For the rest (= all values missing for a lab test for a patient), impute 0
   lagged_data1 <- lagged_data1 %>%
     ungroup() %>%
-    mutate(across((which(names(.)=="b_baso_e9_l_mean_last_values_1095_days")-1):ncol(.)-1, ~ifelse(is.na(.), 0, .)))
+    mutate(across((which(names(.)=="age")):ncol(.)-1, ~ifelse(is.na(.), 0, .)))
   
   # Keep only adults
   lagged_data1 = lagged_data1 %>%
+    dplyr::left_join(lagged_data1_un) %>%
     dplyr::filter(age >= 18)
+  
+  # Manually impute NA to 0.01 for erblast as these are by default 0 if not reported
+  lagged_data1$b_erblast_e9_l_tulos_norm = ifelse(is.na(lagged_data1$b_erblast_e9_l_tulos_norm), 0.01, lagged_data1$b_erblast_e9_l_tulos_norm)
+  lagged_data1$b_erblast_e9_l_mean_last_values_365_days = ifelse(is.na(lagged_data1$b_erblast_e9_l_mean_last_values_365_days), 0.01, lagged_data1$b_erblast_e9_l_mean_last_values_365_days)
+  lagged_data1$b_erblast_e9_l_mean_last_values_1825_days = ifelse(is.na(lagged_data1$b_erblast_e9_l_mean_last_values_1825_days), 0.01, lagged_data1$b_erblast_e9_l_mean_last_values_1825_days)
+  lagged_data1$b_erblast_e9_l_mean_last_values_1095_days = ifelse(is.na(lagged_data1$b_erblast_e9_l_mean_last_values_1095_days), 0.01, lagged_data1$b_erblast_e9_l_mean_last_values_1095_days)
+  lagged_data1$b_erblast_e9_l_trend_from_365_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_365_d), 0, lagged_data1$b_erblast_e9_l_trend_from_365_d)
+  lagged_data1$b_erblast_e9_l_trend_from_1095_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1095_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1095_d)
+  lagged_data1$b_erblast_e9_l_trend_from_1825_d = ifelse(is.na(lagged_data1$b_erblast_e9_l_trend_from_1825_d), 0, lagged_data1$b_erblast_e9_l_trend_from_1825_d)
   
   
   # Export
-  print(paste("Export", length(unique(lagged_data1$henkilotunnus)), "\n"))
+  cat(paste("Export", length(unique(lagged_data1_un$henkilotunnus)), "\n"))
   
   # Convert once to data.table
-  setDT(lagged_data1)
+  setDT(lagged_data1_un)
   
   # Identify relevant columns
-  norm_cols <- grep("_norm", names(lagged_data1), value = TRUE)
+  norm_cols <- grep("_norm", names(lagged_data1_un), value = TRUE)
+  norm_cols <- grep("uncertainty_", norm_cols, value = TRUE)
+  norm_cols <- grep("_val_", norm_cols, value = TRUE, invert = TRUE)
   
   # Pre-split by ID to avoid filtering inside the loop
-  split_data <- split(lagged_data1, by = "henkilotunnus")
+  split_data <- split(lagged_data1_un, by = "henkilotunnus")
   
   # Parallelized loop
   lagged_data_1 <- foreach(
@@ -720,9 +758,9 @@ for (i in 1:length(listfiles1)) {
       )
       
       for (col in norm_cols) {
-        vals_365  <- person_data[[col]][person_data$time_to_dg < x & person_data$time_to_dg >= (x - 365)]
-        vals_1095 <- person_data[[col]][person_data$time_to_dg < (x - 365) & person_data$time_to_dg >= (x - 1095)]
-        vals_1825 <- person_data[[col]][person_data$time_to_dg < (x - 1095) & person_data$time_to_dg >= (x - 1825)]
+        vals_365  <- person_data[[col]][person_data[[col]]==1 & person_data$time_to_dg > (x + 90) & person_data$time_to_dg <= (x + 365)]
+        vals_1095 <- person_data[[col]][person_data[[col]]==1 & person_data$time_to_dg > (x + 365) & person_data$time_to_dg <= (x + 1095)]
+        vals_1825 <- person_data[[col]][person_data[[col]]==1 & person_data$time_to_dg > (x + 1095) & person_data$time_to_dg <= (x + 1825)]
         
         out[[paste0(col, "_val_365_n")]]  <- sum(!is.na(vals_365))
         out[[paste0(col, "_val_1095_n")]] <- sum(!is.na(vals_1095))
@@ -736,6 +774,7 @@ for (i in 1:length(listfiles1)) {
   }
   
   lagged_data_1 = as.data.frame(lagged_data_1)
+  names(lagged_data_1) = gsub("uncertainty_", "", names(lagged_data_1))
   
   lagged_data1 = lagged_data1 %>%
     dplyr::select(-contains("_val_")) %>%
@@ -750,6 +789,7 @@ for (i in 1:length(listfiles1)) {
   saveRDS(lagged_data1, paste0(export, "/healthy/lagged_data_", i, "_4.rds"))
 }
 
+
 listfiles1 = list.files(paste0(export, "/healthy"), pattern = "_4.rds", full.names = TRUE)
 lagged_data1 = data.frame()
 for (i in 1:length(listfiles1)) {
@@ -757,24 +797,31 @@ for (i in 1:length(listfiles1)) {
   
   # Load data
   tmp = readRDS(listfiles1[i]) %>%
-    # dplyr::select(-contains("_val_")) %>%
     dplyr::select(-contains("_mean_last_")) %>%
     dplyr::select(-ends_with("d_2")) %>%
     dplyr::select(-ends_with("norm_2")) %>%
+    dplyr::select(-ends_with("_n_2")) %>%
     dplyr::select(-ends_with("_n_2"))
   
   # Identify columns that contain both conditions
   cols_to_remove <- names(tmp)[grepl("(ferrit|crp|trigly|kol|gf_re|p_tt|crea|b_la)", names(tmp)) &
-                                          grepl("(_d)|(tulos_norm)", names(tmp))]
+                                 grepl("(_d)|(tulos_norm)", names(tmp))]
   # Remove those columns
   tmp <- tmp %>%
     dplyr::select(-any_of(cols_to_remove))
   
   lagged_data1 = bind_rows(lagged_data1, tmp)
 }
+lagged_data1 = lagged_data1 %>% distinct()
 
 # Export
 saveRDS(lagged_data1, paste0(export, "/healthy/lagged_data_final.rds"))
+fwrite(lagged_data1, paste0(export, "/healthy/lagged_data_final.csv"))
+
+# Remove uncertainty variables
+lagged_data1 = lagged_data1 %>%
+  dplyr::select(-contains("uncertainty"))
+saveRDS(lagged_data1, paste0(export, "/healthy/lagged_data_final_wo_uncertainty.rds"))
 
 
 ##### Add disease data #####
@@ -782,7 +829,7 @@ saveRDS(lagged_data1, paste0(export, "/healthy/lagged_data_final.rds"))
 
 # Read data
 
-lagged_data1 = readRDS(paste0(export, "/healthy/lagged_data_final.rds"))
+lagged_data1 = readRDS(paste0(export, "/healthy/lagged_data_final_wo_uncertainty.rds"))
 mf = readRDS(paste0(export, "/lagged_data_MF3.rds"))
 saveRDS(mf, paste0(export, "/lagged_data_MF3_allpts.rds"))
 mds = readRDS(paste0(export, "/lagged_data_MDS3.rds"))
@@ -825,24 +872,35 @@ lagged_data1 = lagged_data1 %>%
   dplyr::select(all_of(shared_values))
 
 # MF
+fwrite(mf, paste0(export, "/lagged_data_MF3_with_uncertainty.csv"))
 mf = mf %>%
   dplyr::select(all_of(shared_values)) %>%
   bind_rows(lagged_data1)
 fwrite(mf, paste0(export, "/lagged_data_MF3.csv"))
 rm(mf)
 
+
 # MDS
+fwrite(mds, paste0(export, "/lagged_data_MDS3_with_uncertainty.csv"))
 mds = mds %>%
   dplyr::select(all_of(shared_values)) %>%
   bind_rows(lagged_data1)
 fwrite(mds, paste0(export, "/lagged_data_MDS3.csv"))
 rm(mds)
 
+
 # AML
+## Remove secondary AML
+saml = readRDS(paste0(export, "/saml.rds"))
+aml = aml %>%
+  dplyr::filter(!henkilotunnus %in% c("02139_31819320", saml$henkilotunnus))
+fwrite(aml, paste0(export, "/lagged_data_de novo AML3_with_uncertainty.csv"))
 aml = aml %>%
   dplyr::select(all_of(shared_values)) %>%
   bind_rows(lagged_data1)
 fwrite(aml, paste0(export, "/lagged_data_de novo AML3.csv"))
+rm(aml)
+
 
 # Edit lab_demo
 ## AML

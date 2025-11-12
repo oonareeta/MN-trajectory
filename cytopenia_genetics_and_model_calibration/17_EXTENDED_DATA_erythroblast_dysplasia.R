@@ -226,7 +226,14 @@ for (i in c("MDS", "de novo AML", "MF")) {
   for (j in c("ERY_vacuolated_mild", "ERY_large_ery_mild", "ERY_megaloblast_mild", "ERY_dysmorphic_mild", "ERY_multinucleated_mild")) {
     
     lab1$tmp = lab1[[j]]
-    j1 = to_sentence_case(gsub("ERY_|_mild|_ery", "", j))
+    if (j == "ERY_megaloblast_mild") {
+      j1 = gsub("ERY_megaloblast_mild", "Erythroblasts with\nnuclear-cytoplasmic asynchrony", j)
+    } else {
+      j1 = to_sentence_case(gsub("ERY_|_mild|_ery", "", j))
+      j1 = paste0(j1, " erythroblasts")
+    }
+    
+    # lab1$tmp = factor(lab1$tmp, levels = c(FALSE, TRUE))
     
     if (lab1 %>%
         dplyr::filter(!is.na(tmp)) %>%
@@ -272,18 +279,33 @@ for (i in c("MDS", "de novo AML", "MF")) {
   
   df1 = readRDS(paste0(export, "/", i, "_lab_demo.rds"))
   
+  if (i == "de novo AML") {
+    j = "AML"
+  } else {
+    j = i
+  }
+  
+  df1 = df1 %>%
+    dplyr::filter(!(disease == "AML" & henkilotunnus %in% exclude[exclude$disease=="AML",]$henkilotunnus))
+  df1 = df1 %>%
+    dplyr::filter(!(disease == "MF" & henkilotunnus %in% exclude[exclude$disease=="MF",]$henkilotunnus))
+  df1 = df1 %>%
+    dplyr::filter(!(disease == "MDS" & henkilotunnus %in% exclude[exclude$disease=="MDS",]$henkilotunnus))
+  
   # Read lab data
   df = fread(paste0(export, "/lab_data_for_modelling_", i, ".csv")) %>%
     dplyr::filter(henkilotunnus %in% unique(df1$henkilotunnus)) %>%
-    dplyr::filter(time_to_dg<-90 & time_to_dg>-730)
+    dplyr::filter(time_to_dg<-30 & time_to_dg>-730)
+  
   
   # Keep RDW
   lab1 = df %>%
     dplyr::filter((tutkimus_lyhenne_yksikko == "E-RDW (%)")) %>%
+    
     # Summarise median by patient and laboratory test
     dplyr::group_by(henkilotunnus) %>%
     mutate(tulos = mean(tulos, na.rm=TRUE)) %>%
-    slice(1) %>%
+    dplyr::slice(1) %>%
     ungroup() %>%
     dplyr::select(henkilotunnus, tulos)
   
@@ -293,7 +315,12 @@ for (i in c("MDS", "de novo AML", "MF")) {
   for (j in c("ERY_vacuolated_mild", "ERY_large_ery_mild", "ERY_megaloblast_mild", "ERY_dysmorphic_mild", "ERY_multinucleated_mild")) {
     
     lab1$tmp = lab1[[j]]
-    j1 = to_sentence_case(gsub("ERY_|_mild|_ery", "", j))
+    if (j == "ERY_megaloblast_mild") {
+      j1 = gsub("ERY_megaloblast_mild", "Erythroblasts with\nnuclear-cytoplasmic asynchrony", j)
+    } else {
+      j1 = to_sentence_case(gsub("ERY_|_mild|_ery", "", j))
+      j1 = paste0(j1, " erythroblasts")
+    }
     
     if (lab1 %>%
         dplyr::filter(!is.na(tmp)) %>%
